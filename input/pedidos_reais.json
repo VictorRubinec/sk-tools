@@ -1,0 +1,46 @@
+[
+  {
+    "tipo": "Magic",
+    "estilo": "Normal",
+    "titulo": "Parceira de Todas as Jornadas",
+    "descricao": "Ilustração artística de casal em estilo pintura digital de alta fantasia de Magic: The Gathering, transformando a fisionomia e traços da foto de referência em uma arte épica e romântica com iluminação dramática.",
+    "texto_adicional": "Criatura Lendária — Humano. Quando entra em campo, você ganha +100 de felicidade e um beijo meu. Enquanto estivermos longe, recebe uma mensagem de saudade por turno. Fraqueza: quando eu estou perto explodimos de ódio ou de amor. Flavor text: 'Mesmo a distância, você continua sendo a minha melhor jogada. ♥' Poder/Resistência: 2/2.",
+    "cores": ["Branco", "Vermelho"],
+    "imagens_referencia": [
+      "D:/Desktop/Studio Kustom/04 - Pedidos e Historico/Pedidos/164/foto1.jpg"
+    ]
+  },
+  {
+    "tipo": "Magic",
+    "estilo": "Normal",
+    "titulo": "Parceiro de Todas as Jornadas",
+    "descricao": "Ilustração artística de casal em cenário montanhoso ao ar livre com céu aberto e vegetação em estilo pintura digital de Magic: The Gathering, adaptando fielmente a fisionomia da foto de referência.",
+    "texto_adicional": "Companheirismo Infinito: Mesmo de longe, você sempre está presente. Aventureiro da Vida Real: Você topa os planos malucos, coleciona memórias. Sonhador e Parceiro de Sonhos: Ama os seus hobbies e te incentiva. Escolha Diária: E mesmo com todos os desafios, você ainda escolhe ficar. Flavor text: 'Não importa a distância, o caos ou o tempo, você sempre será o meu lugar seguro. ♥' Poder/Resistência: 2/2.",
+    "cores": ["Branco", "Vermelho"],
+    "imagens_referencia": [
+      "D:/Desktop/Studio Kustom/04 - Pedidos e Historico/Pedidos/164/foto2.jpg"
+    ]
+  },
+  {
+    "tipo": "Pokemon",
+    "estilo": "Fullart",
+    "titulo": "Power Couple VMAX",
+    "descricao": "Ilustração do casal em traje elegante e alegre em meio a um jardim com palmeiras, transformados em treinadores Pokémon em estilo anime de Pokémon TCG VMAX, com efeitos de energia luminosa e foco expressivo.",
+    "texto_adicional": "HP 2023 - Habilidade: Conexão Infinita. Ataque: Amor Lendário 300+.",
+    "cores": ["Fada", "Elétrico"],
+    "imagens_referencia": [
+      "D:/Desktop/Studio Kustom/04 - Pedidos e Historico/Pedidos/165/foto.jpg"
+    ]
+  },
+  {
+    "tipo": "Yu-Gi-Oh!",
+    "estilo": "Normal",
+    "titulo": "Laço do amor eterno",
+    "descricao": "Ilustração em estilo anime/mangá shonen romântico do casal com aura mística e brilho cintilante característico de carta de armadilha contínua de Yu-Gi-Oh!.",
+    "texto_adicional": "[Carta de Armadilha / Efeito Contínuo] Esta carta pode ser ativada quando você estiver tendo um dia ruim. Se estiver desanimado, esta carta poderá restaurar seu bom humor. Se duvidar de si mesmo, ela te lembrará do seu valor. E, se tudo der errado, você poderá contar com a companhia de seu parceiro para enfrentar o próximo turno. Enquanto esta carta estiver ativa, você sempre terá alguém para compartilhar suas vitórias, rir das suas derrotas e tornar os dias comuns um pouco mais especiais. Esta carta não pode ser destruída.",
+    "cores": ["Rosa", "Armadilha"],
+    "imagens_referencia": [
+      "D:/Desktop/Studio Kustom/04 - Pedidos e Historico/Pedidos/176/br-11134231-820lv-muf53vtirair74.jpg"
+    ]
+  }
+]

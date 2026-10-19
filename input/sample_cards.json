@@ -1,0 +1,36 @@
+[
+  {
+    "tipo": "Magic",
+    "estilo": "Fullart",
+    "titulo": "Arcanista do Vazio Estelar",
+    "descricao": "Um mago élfico canalizando energia cósmica entre ruínas flutuantes.",
+    "texto_adicional": "Voar, Vigilância. Toda vez que você conjurar uma mágica instantânea, compre um card.",
+    "cores": ["Azul", "Preto"],
+    "imagens_referencia": ["input/sample_reference.png"]
+  },
+  {
+    "tipo": "Pokemon",
+    "estilo": "Alternative",
+    "titulo": "Charizard VMAX",
+    "descricao": "Dragão colossal sobrevoando um vulcão ativo ao entardecer.",
+    "texto_adicional": "HP 330 - Giro Incandescente 300",
+    "cores": "Fogo"
+  },
+  {
+    "tipo": "Yu-Gi-Oh!",
+    "estilo": "Normal",
+    "titulo": "Dragão Cibernético do Abismo",
+    "descricao": "Serpente mecânica prateada emergindo de um portal dimensional escuro.",
+    "texto_adicional": "[Máquina / Efeito] ATK/2800 DEF/2100",
+    "cores": ["Luz", "Trevas"],
+    "imagens_referencia": ["input/sample_reference.png"]
+  },
+  {
+    "tipo": "One Piece",
+    "estilo": "Fullart",
+    "titulo": "Monkey D. Luffy - Gear 5",
+    "descricao": "Luffy sorrindo entre nuvens brancas em estilo dinâmico de mangá.",
+    "texto_adicional": "Leader / Poder 5000 / Supernova - Straw Hat Crew",
+    "cores": "Vermelho"
+  }
+]

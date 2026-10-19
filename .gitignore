@@ -1,0 +1,7 @@
+.chrome_profile/
+output/
+*.pyc
+__pycache__/
+.pytest_cache/
+.env
+*.log
