@@ -11,7 +11,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE_DIR: Path = Path(__file__).resolve().parent.parent
+PACKAGE_DIR: Path = Path(__file__).resolve().parent.parent
+BASE_DIR: Path = PACKAGE_DIR.parent.parent
 INPUT_DIR: Path = BASE_DIR / "input"
 OUTPUT_DIR: Path = BASE_DIR / "output"
 

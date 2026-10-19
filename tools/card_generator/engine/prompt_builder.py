@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import List
 
-from core.schema import CardInput
-from engine.templates import (
+from tools.card_generator.core.schema import CardInput
+from tools.card_generator.engine.templates import (
     NEGATIVE_CONSTRAINTS,
     get_game_template,
     get_style_template,

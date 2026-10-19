@@ -11,12 +11,24 @@ from unittest.mock import patch
 
 from pydantic import ValidationError
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.config import AppConfig, BASE_DIR, DEFAULT_CONFIG, INPUT_DIR
-from core.schema import CardInput, load_cards_from_file
+from tools.card_generator import (
+    CardInput,
+    check_gemini_session,
+    generate_batch_cards,
+    generate_single_card,
+    load_cards_from_file,
+)
+from tools.card_generator.core.config import (
+    AppConfig,
+    BASE_DIR,
+    DEFAULT_CONFIG,
+    INPUT_DIR,
+    PACKAGE_DIR,
+)
 
 
 class TestCardInputSchema(unittest.TestCase):
@@ -237,14 +249,23 @@ class TestCardInputSchema(unittest.TestCase):
                 load_cards_from_file(Path(tmp_dir) / "nao_existe.json")
 
     def test_project_directory_structure_exists(self) -> None:
-        """Verifica se toda a estrutura de diretórios exigida na Fase 1 está presente."""
+        """Verifica se toda a estrutura encapsulada em tools/card_generator/ e na raiz está presente."""
         DEFAULT_CONFIG.ensure_directories()
-        required_dirs = ["core", "engine", "browser", "validator", "input", "output"]
-        for folder in required_dirs:
-            dir_path = BASE_DIR / folder
+        for root_folder in ["tools", "input", "output"]:
+            dir_path = BASE_DIR / root_folder
             self.assertTrue(
-                dir_path.is_dir(), f"O diretório obrigatório '{folder}/' não existe."
+                dir_path.is_dir(),
+                f"O diretório obrigatório da raiz '{root_folder}/' não existe.",
             )
+        for pkg_folder in ["core", "engine", "browser", "validator"]:
+            dir_path = PACKAGE_DIR / pkg_folder
+            self.assertTrue(
+                dir_path.is_dir(),
+                f"O subpacote obrigatório 'tools/card_generator/{pkg_folder}/' não existe.",
+            )
+        self.assertTrue(callable(generate_single_card))
+        self.assertTrue(callable(generate_batch_cards))
+        self.assertTrue(callable(check_gemini_session))
 
 
 if __name__ == "__main__":

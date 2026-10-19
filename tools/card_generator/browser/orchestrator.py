@@ -5,18 +5,18 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from browser.exceptions import (
+from tools.card_generator.browser.exceptions import (
     GeminiImageNotGeneratedError,
     GeminiSessionNotAuthenticatedError,
 )
-from browser.gemini_client import GeminiClient
-from browser.session import get_chrome_context
-from core.config import AppConfig, DEFAULT_CONFIG
-from core.logger import logger
-from core.schema import CardInput
-from engine.prompt_builder import PromptBuilder
+from tools.card_generator.browser.gemini_client import GeminiClient
+from tools.card_generator.browser.session import get_chrome_context
+from tools.card_generator.core.config import AppConfig, DEFAULT_CONFIG
+from tools.card_generator.core.logger import logger
+from tools.card_generator.core.schema import CardInput
+from tools.card_generator.engine.prompt_builder import PromptBuilder
 
 
 def _slugify_filename(text: str) -> str:

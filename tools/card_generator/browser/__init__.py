@@ -1,15 +1,15 @@
 """Pacote browser responsável pela automação web com Playwright."""
 
-from browser.exceptions import (
+from tools.card_generator.browser.exceptions import (
     GeminiBrowserError,
     GeminiGenerationTimeoutError,
     GeminiImageNotGeneratedError,
     GeminiPromptSubmissionError,
     GeminiSessionNotAuthenticatedError,
 )
-from browser.gemini_client import GeminiClient
-from browser.orchestrator import generate_card_image
-from browser.session import (
+from tools.card_generator.browser.gemini_client import GeminiClient
+from tools.card_generator.browser.orchestrator import generate_card_image
+from tools.card_generator.browser.session import (
     DEFAULT_VIEWPORT,
     STABILITY_ARGS,
     get_chrome_context,

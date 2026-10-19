@@ -25,8 +25,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from playwright.sync_api import FileChooser, Page, Request, Response, sync_playwright
 
-from browser.session import STABILITY_ARGS, resolve_user_data_dir
-from core.config import DEFAULT_CONFIG
+from tools.card_generator.browser.session import STABILITY_ARGS, resolve_user_data_dir
+from tools.card_generator.core.config import DEFAULT_CONFIG
 
 LOG_DIR = PROJECT_ROOT / "output"
 LOG_FILE = LOG_DIR / "gemini_spy_log.jsonl"

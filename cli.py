@@ -1,4 +1,4 @@
-"""Interface de Linha de Comando (CLI) unificada do ecossistema sk-tools."""
+"""Interface de Linha de Comando (CLI) unificada do ecossistema Studio Kustom (sk-tools)."""
 
 from __future__ import annotations
 
@@ -11,23 +11,18 @@ from typing import List, Optional, Sequence
 
 from pydantic import ValidationError
 
-from browser.gemini_client import GeminiClient
-from browser.session import get_chrome_context
-from core.config import AppConfig, DEFAULT_CONFIG, INPUT_DIR
-from core.logger import logger, setup_logger
-from core.runner import CardGenerationRunner
-from core.schema import CardInput, load_cards_from_file
+from tools.card_generator.api import check_gemini_session as api_check_gemini_session
+from tools.card_generator.browser.session import get_chrome_context
+from tools.card_generator.core.config import AppConfig, DEFAULT_CONFIG, INPUT_DIR
+from tools.card_generator.core.logger import logger, setup_logger
+from tools.card_generator.core.runner import CardGenerationRunner
+from tools.card_generator.core.schema import CardInput, load_cards_from_file
+
+CARD_GEN_COMMANDS = {"card-gen", "cards", "card"}
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
-    """Constrói e retorna o parser de argumentos da CLI."""
-    parser = argparse.ArgumentParser(
-        prog="sk-tools",
-        description=(
-            "Automatizador de geração e validação de cartas colecionáveis (TCG) "
-            "via Google Gemini Web e Playwright."
-        ),
-    )
+def _add_card_gen_arguments(parser: argparse.ArgumentParser) -> None:
+    """Adiciona os argumentos da ferramenta `card-gen` em um parser/subparser."""
     parser.add_argument(
         "-i",
         "--input",
@@ -71,27 +66,40 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Desativa a gravação persistente de logs em arquivo (output/logs/).",
     )
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Constrói e retorna o parser de argumentos da CLI com suporte a subcomandos."""
+    parser = argparse.ArgumentParser(
+        prog="sk-tools",
+        description=(
+            "Suíte unificada de automação Studio Kustom (sk-tools). "
+            "Inclui o gerador e validador de cartas colecionáveis (card-gen)."
+        ),
+    )
+    _add_card_gen_arguments(parser)
+
+    subparsers = parser.add_subparsers(
+        dest="command",
+        title="subcomandos disponíveis",
+        description="Ferramentas encapsuladas do ecossistema sk-tools (padrão: card-gen).",
+    )
+
+    card_gen_parser = subparsers.add_parser(
+        "card-gen",
+        aliases=["cards", "card"],
+        help="Gerador e validador automatizado de cartas TCG via Google Gemini Web.",
+        description="Executa a geração e validação de cartas colecionáveis (TCG).",
+    )
+    _add_card_gen_arguments(card_gen_parser)
+
     return parser
 
 
 def check_gemini_session(config: AppConfig) -> int:
-    """Abre o navegador configurado, verifica o status de login no Gemini e encerra."""
-    logger.info("Verificando status de autenticação da sessão no Google Gemini...")
-    context = get_chrome_context(config)
-    client = GeminiClient()
-    try:
-        page = context.pages[0] if context.pages else context.new_page()
-        page.goto(config.gemini_url, wait_until="domcontentloaded")
-        authenticated = client.check_login_status(page)
-        if authenticated:
-            logger.success("Sessão AUTENTICADA e pronta para geração de cartas.")
-            return 0
-        logger.warning(
-            "Sessão NÃO AUTENTICADA. Execute 'python scripts/setup_session.py' para fazer login."
-        )
-        return 1
-    finally:
-        context.close()
+    """Abre o navegador configurado, verifica o status de login no Gemini e retorna exit code."""
+    authenticated = api_check_gemini_session(config)
+    return 0 if authenticated else 1
 
 
 def resolve_input_cards(args: argparse.Namespace) -> List[CardInput]:
@@ -111,11 +119,8 @@ def resolve_input_cards(args: argparse.Namespace) -> List[CardInput]:
     return load_cards_from_file(Path(args.input))
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    """Ponto de entrada principal da CLI unificada."""
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
-
+def run_card_generator_cli(args: argparse.Namespace) -> int:
+    """Executa o fluxo operacional do subcomando `card-gen`."""
     setup_logger(
         console_level=args.log_level,
         log_to_file=not args.no_file_log,
@@ -134,7 +139,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.check_session:
         return check_gemini_session(config)
 
-    logger.info("Iniciando SK-TOOLS | Gerador e Validador Automatizado de Cartas TCG")
+    logger.info("Iniciando SK-TOOLS [card-gen] | Gerador e Validador Automatizado de Cartas TCG")
 
     try:
         cards = resolve_input_cards(args)
@@ -153,7 +158,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     succeeded = 0
     failed = 0
 
-    context = get_chrome_context(config)
+    shared_context = get_chrome_context(config) if len(cards) > 1 else None
     try:
         for idx, card in enumerate(cards, start=1):
             logger.info(
@@ -166,7 +171,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
 
             ok, output_path, validation = runner.process_card(
-                card=card, config=config, max_retries=args.retries, context=context
+                card=card,
+                config=config,
+                max_retries=args.retries,
+                context=shared_context,
             )
 
             if ok and output_path is not None and validation is not None:
@@ -197,7 +205,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     reasons,
                 )
     finally:
-        context.close()
+        if shared_context is not None:
+            shared_context.close()
 
     logger.info(
         "Processamento finalizado | Total: {} | Sucesso: {} | Falhas: {}",
@@ -207,6 +216,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
 
     return 0 if failed == 0 else 1
+
+
+def _normalize_argv(argv: Sequence[str]) -> List[str]:
+    """Insere o subcomando padrão `card-gen` quando nenhum subcomando explícito é informado."""
+    args_list = list(argv)
+    if not args_list:
+        return ["card-gen"]
+    first = args_list[0]
+    if first in ("-h", "--help"):
+        return args_list
+    if first not in CARD_GEN_COMMANDS:
+        return ["card-gen", *args_list]
+    return args_list
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Ponto de entrada principal da CLI unificada."""
+    parser = build_arg_parser()
+    raw_argv = sys.argv[1:] if argv is None else list(argv)
+    normalized_argv = _normalize_argv(raw_argv)
+    args = parser.parse_args(normalized_argv)
+
+    command = getattr(args, "command", None) or "card-gen"
+    if command in CARD_GEN_COMMANDS:
+        return run_card_generator_cli(args)
+
+    parser.print_help()
+    return 2
 
 
 if __name__ == "__main__":

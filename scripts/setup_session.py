@@ -11,9 +11,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from browser.gemini_client import GeminiClient
-from browser.session import get_chrome_context, resolve_user_data_dir
-from core.config import AppConfig, DEFAULT_CONFIG
+from tools.card_generator.browser.gemini_client import GeminiClient
+from tools.card_generator.browser.session import get_chrome_context, resolve_user_data_dir
+from tools.card_generator.core.config import AppConfig, DEFAULT_CONFIG
 
 
 def setup_interactive_session(config: AppConfig = DEFAULT_CONFIG) -> bool:

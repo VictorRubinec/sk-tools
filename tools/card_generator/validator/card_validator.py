@@ -9,7 +9,7 @@ from typing import List, Optional, Union
 
 from PIL import Image, ImageStat, UnidentifiedImageError
 
-from core.schema import CardInput
+from tools.card_generator.core.schema import CardInput
 
 
 @dataclass

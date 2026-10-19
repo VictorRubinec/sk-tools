@@ -12,11 +12,11 @@ from unittest.mock import MagicMock, patch
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from browser import (
+from tools.card_generator.browser import (
     GeminiBrowserError,
     GeminiClient,
     GeminiGenerationTimeoutError,
@@ -27,8 +27,8 @@ from browser import (
     generate_card_image,
     get_chrome_context,
 )
-from core.config import AppConfig
-from core.schema import CardInput
+from tools.card_generator.core.config import AppConfig
+from tools.card_generator.core.schema import CardInput
 
 
 class TestBrowserExceptions(unittest.TestCase):
@@ -220,7 +220,7 @@ class TestGeminiClientUnits(unittest.TestCase):
 class TestBrowserOrchestrator(unittest.TestCase):
     """Testa o fluxo ponta a ponta do orquestrador generate_card_image com mocks."""
 
-    @patch("browser.orchestrator.get_chrome_context")
+    @patch("tools.card_generator.browser.orchestrator.get_chrome_context")
     def test_generate_card_image_full_flow(
         self, mock_get_context: MagicMock
     ) -> None:
@@ -268,7 +268,7 @@ class TestBrowserOrchestrator(unittest.TestCase):
             )
             mock_context.close.assert_called_once()
 
-    @patch("browser.orchestrator.get_chrome_context")
+    @patch("tools.card_generator.browser.orchestrator.get_chrome_context")
     def test_generate_card_image_raises_when_not_authenticated(
         self, mock_get_context: MagicMock
     ) -> None:

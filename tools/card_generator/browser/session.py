@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from playwright.sync_api import BrowserContext, Playwright, sync_playwright
 
-from core.config import AppConfig, DEFAULT_CONFIG
+from tools.card_generator.core.config import AppConfig, DEFAULT_CONFIG
 
 DEFAULT_VIEWPORT: Dict[str, int] = {"width": 1440, "height": 900}
 STABILITY_ARGS: List[str] = [

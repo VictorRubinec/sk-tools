@@ -8,7 +8,7 @@ from typing import Any, Final, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from core.config import BASE_DIR
+from tools.card_generator.core.config import BASE_DIR
 
 STANDARD_CARD_TYPES: Final[dict[str, str]] = {
     "magic": "Magic",

@@ -11,14 +11,14 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from browser.exceptions import (
+from tools.card_generator.browser.exceptions import (
     GeminiBrowserError,
     GeminiGenerationTimeoutError,
     GeminiImageNotGeneratedError,
     GeminiPromptSubmissionError,
 )
-from core.config import BASE_DIR
-from core.logger import logger
+from tools.card_generator.core.config import BASE_DIR
+from tools.card_generator.core.logger import logger
 
 
 class GeminiClient:

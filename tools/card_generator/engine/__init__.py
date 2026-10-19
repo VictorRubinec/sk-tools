@@ -1,7 +1,7 @@
 """Pacote engine responsável pela montagem de prompts por jogo e estilo."""
 
-from engine.prompt_builder import PromptBuilder
-from engine.templates import (
+from tools.card_generator.engine.prompt_builder import PromptBuilder
+from tools.card_generator.engine.templates import (
     GAME_TEMPLATES,
     NEGATIVE_CONSTRAINTS,
     STYLE_TEMPLATES,

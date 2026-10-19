@@ -9,16 +9,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import cli
-from browser.exceptions import GeminiImageNotGeneratedError
-from core.config import AppConfig
-from core.runner import CardGenerationRunner
-from core.schema import CardInput
-from tests.test_validator import create_synthetic_image_bytes
+from tests.test_card_generator.test_validator import create_synthetic_image_bytes
+from tools.card_generator.browser.exceptions import GeminiImageNotGeneratedError
+from tools.card_generator.core.config import AppConfig
+from tools.card_generator.core.runner import CardGenerationRunner
+from tools.card_generator.core.schema import CardInput
 
 
 class TestCardGenerationRunner(unittest.TestCase):
@@ -209,6 +209,53 @@ class TestCardGenerationRunner(unittest.TestCase):
                 "--headless",
             ])
             self.assertEqual(exit_code, 0)
+
+    def test_public_api_facade_and_cli_subcommands(self) -> None:
+        """Verifica a fachada pública tools.card_generator.api e os subcomandos da CLI."""
+        from tools.card_generator import (
+            check_gemini_session,
+            generate_batch_cards,
+            generate_single_card,
+        )
+
+        inline_json = json.dumps(
+            {"tipo": "Magic", "estilo": "Fullart", "titulo": "Mago Encapsulado"}
+        )
+        runner = CardGenerationRunner()
+        valid_result = runner.validator.validate_image(
+            create_synthetic_image_bytes(750, 1050)
+        )
+
+        with patch.object(
+            CardGenerationRunner,
+            "process_card",
+            return_value=(True, Path("encapsulated.png"), valid_result),
+        ):
+            ok, out_path, res = generate_single_card(self.sample_card, max_retries=2)
+            self.assertTrue(ok)
+            self.assertEqual(out_path, Path("encapsulated.png"))
+            self.assertTrue(res.is_valid)  # type: ignore[union-attr]
+
+            for subcmd in ["card-gen", "cards", "card"]:
+                with self.subTest(subcommand=subcmd):
+                    code = cli.main(
+                        [subcmd, "--card", inline_json, "--no-file-log", "--headless"]
+                    )
+                    self.assertEqual(code, 0)
+
+        with patch("tools.card_generator.api.get_chrome_context"), patch.object(
+            CardGenerationRunner,
+            "process_batch",
+            return_value={"total": 1, "succeeded": 1, "failed": 0, "results": []},
+        ):
+            batch_res = generate_batch_cards([self.sample_card], max_retries=1)
+            self.assertEqual(batch_res["succeeded"], 1)
+
+        with patch("tools.card_generator.api.get_chrome_context"), patch(
+            "tools.card_generator.api.GeminiClient.check_login_status",
+            return_value=True,
+        ):
+            self.assertTrue(check_gemini_session())
 
 
 if __name__ == "__main__":

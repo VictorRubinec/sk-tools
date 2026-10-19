@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+
 from loguru import logger
 
-from core.config import BASE_DIR, OUTPUT_DIR
+from tools.card_generator.core.config import BASE_DIR, OUTPUT_DIR
 
 LOGS_DIR: Path = OUTPUT_DIR / "logs"
 LOG_FILE_PATH: Path = LOGS_DIR / "sk_tools_{time:YYYY-MM-DD}.log"
@@ -68,4 +69,4 @@ def setup_logger(
 # Inicializa automaticamente com os valores padrão
 setup_logger()
 
-__all__ = ["logger", "setup_logger", "LOGS_DIR"]
+__all__ = ["logger", "setup_logger", "LOGS_DIR", "BASE_DIR"]

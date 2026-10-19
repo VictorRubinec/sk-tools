@@ -5,16 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from browser.exceptions import (
+from tools.card_generator.browser.exceptions import (
     GeminiGenerationTimeoutError,
     GeminiImageNotGeneratedError,
     GeminiPromptSubmissionError,
 )
-from browser.orchestrator import generate_card_image
-from core.config import AppConfig, DEFAULT_CONFIG
-from core.logger import logger
-from core.schema import CardInput
-from validator.card_validator import CardImageValidator, ValidationResult
+from tools.card_generator.browser.orchestrator import generate_card_image
+from tools.card_generator.core.config import AppConfig, DEFAULT_CONFIG
+from tools.card_generator.core.logger import logger
+from tools.card_generator.core.schema import CardInput
+from tools.card_generator.validator.card_validator import (
+    CardImageValidator,
+    ValidationResult,
+)
 
 
 class CardGenerationRunner:
@@ -56,7 +59,7 @@ class CardGenerationRunner:
         for attempt in range(1, max_retries + 1):
             attempt_card = self._build_attempt_card(card, attempt, reinforcement_notes)
             logger.info(
-                "Processando carta '%s' (%s) - Tentativa %d/%d",
+                "Processando carta '{}' ({}) - Tentativa {}/{}",
                 card.titulo,
                 card.tipo,
                 attempt,
@@ -74,7 +77,7 @@ class CardGenerationRunner:
                 GeminiPromptSubmissionError,
             ) as exc:
                 logger.warning(
-                    "Tentativa %d/%d falhou durante a geração no navegador para '%s': %s",
+                    "Tentativa {}/{} falhou durante a geração no navegador para '{}': {}",
                     attempt,
                     max_retries,
                     card.titulo,
@@ -102,7 +105,7 @@ class CardGenerationRunner:
 
             # Reprovada na validação: apaga o arquivo inválido e prepara reforço no prompt
             logger.warning(
-                "Carta '%s' reprovada na tentativa %d/%d. Motivos: %s",
+                "Carta '{}' reprovada na tentativa {}/{}. Motivos: {}",
                 card.titulo,
                 attempt,
                 max_retries,
@@ -112,7 +115,7 @@ class CardGenerationRunner:
             reinforcement_notes = list(validation_result.errors)
 
         logger.error(
-            "Falha definitiva ao gerar a carta '%s' após %d tentativa(s).",
+            "Falha definitiva ao gerar a carta '{}' após {} tentativa(s).",
             card.titulo,
             max_retries,
         )
@@ -202,5 +205,5 @@ class CardGenerationRunner:
                 path_obj.unlink()
         except OSError as exc:
             logger.warning(
-                "Não foi possível remover a imagem inválida '%s': %s", image_path, exc
+                "Não foi possível remover a imagem inválida '{}': {}", image_path, exc
             )
