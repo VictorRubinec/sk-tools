@@ -12,13 +12,46 @@ from typing import List, Optional, Sequence
 from pydantic import ValidationError
 
 from tools.card_generator.api import check_gemini_session as api_check_gemini_session
+from tools.card_generator.browser.exceptions import GeminiBrowserError
 from tools.card_generator.browser.session import get_chrome_context
 from tools.card_generator.core.config import AppConfig, DEFAULT_CONFIG, INPUT_DIR
 from tools.card_generator.core.logger import logger, setup_logger
 from tools.card_generator.core.runner import CardGenerationRunner
 from tools.card_generator.core.schema import CardInput, load_cards_from_file
+from tools.upscaler.api import upscale_card_to_poster
+from tools.upscaler.prompt_builder import normalize_target_format
 
 CARD_GEN_COMMANDS = {"card-gen", "cards", "card"}
+UPSCALE_COMMANDS = {"upscale", "poster", "up"}
+ALL_SUBCOMMANDS = CARD_GEN_COMMANDS | UPSCALE_COMMANDS
+
+
+def _add_common_logging_arguments(parser: argparse.ArgumentParser) -> None:
+    """Adiciona argumentos comuns de execução e logging em um parser."""
+    parser.add_argument(
+        "-r",
+        "--retries",
+        type=int,
+        default=3,
+        help="Número máximo de tentativas em caso de falha ou reprovação (padrão: 3).",
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Executa o navegador em modo sem interface gráfica (headless=True).",
+    )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        choices=["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR"],
+        help="Nível de detalhamento dos logs de console (padrão: INFO).",
+    )
+    parser.add_argument(
+        "--no-file-log",
+        action="store_true",
+        help="Desativa a gravação persistente de logs em arquivo (output/logs/).",
+    )
 
 
 def _add_card_gen_arguments(parser: argparse.ArgumentParser) -> None:
@@ -38,34 +71,30 @@ def _add_card_gen_arguments(parser: argparse.ArgumentParser) -> None:
         help="JSON inline representando uma única carta para processamento imediato.",
     )
     parser.add_argument(
-        "-r",
-        "--retries",
-        type=int,
-        default=3,
-        help="Número máximo de tentativas por carta em caso de falha ou reprovação (padrão: 3).",
-    )
-    parser.add_argument(
-        "--headless",
-        action="store_true",
-        help="Executa o navegador em modo sem interface gráfica (headless=True).",
-    )
-    parser.add_argument(
         "--check-session",
         action="store_true",
         help="Apenas verifica se a sessão do Google Gemini está autenticada e encerra.",
     )
+    _add_common_logging_arguments(parser)
+
+
+def _add_upscale_arguments(parser: argparse.ArgumentParser) -> None:
+    """Adiciona os argumentos da ferramenta `upscale` em um subparser."""
     parser.add_argument(
-        "--log-level",
+        "--image",
+        "-i",
         type=str,
-        default="INFO",
-        choices=["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR"],
-        help="Nível de detalhamento dos logs de console (padrão: INFO).",
+        required=True,
+        help="Caminho da imagem da carta original a ser convertida em poster.",
     )
     parser.add_argument(
-        "--no-file-log",
-        action="store_true",
-        help="Desativa a gravação persistente de logs em arquivo (output/logs/).",
+        "--target",
+        "-t",
+        type=str,
+        required=True,
+        help="Formato alvo do poster a 300 DPI ('a4_v', 'a4_h', 'a3_v', 'a3_h').",
     )
+    _add_common_logging_arguments(parser)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -74,7 +103,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         prog="sk-tools",
         description=(
             "Suíte unificada de automação Studio Kustom (sk-tools). "
-            "Inclui o gerador e validador de cartas colecionáveis (card-gen)."
+            "Inclui o gerador de cartas (card-gen) e o upscaler de posters 300 DPI (upscale)."
         ),
     )
     _add_card_gen_arguments(parser)
@@ -92,6 +121,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description="Executa a geração e validação de cartas colecionáveis (TCG).",
     )
     _add_card_gen_arguments(card_gen_parser)
+
+    upscale_parser = subparsers.add_parser(
+        "upscale",
+        aliases=["poster", "up"],
+        help="Upscaler e redraw de cartas para posters 300 DPI (A4/A3 Vertical e Horizontal).",
+        description="Realiza o redraw e super-resolução de uma carta para poster em 300 DPI.",
+    )
+    _add_upscale_arguments(upscale_parser)
 
     return parser
 
@@ -218,6 +255,52 @@ def run_card_generator_cli(args: argparse.Namespace) -> int:
     return 0 if failed == 0 else 1
 
 
+def run_upscale_cli(args: argparse.Namespace) -> int:
+    """Executa o fluxo operacional do subcomando `upscale`."""
+    setup_logger(
+        console_level=args.log_level,
+        log_to_file=not args.no_file_log,
+    )
+
+    if args.retries < 1:
+        logger.error("O argumento --retries deve ser maior ou igual a 1.")
+        return 2
+
+    try:
+        spec = normalize_target_format(args.target)
+    except ValueError as exc:
+        logger.error("Erro de parâmetro em --target: {}", exc)
+        return 2
+
+    config = replace(
+        DEFAULT_CONFIG,
+        headless=True if args.headless else DEFAULT_CONFIG.headless,
+    )
+    config.ensure_directories()
+
+    logger.info(
+        "Iniciando SK-TOOLS [upscale] | Imagem: '{}' -> Formato: {} ({}x{}px @ {} DPI)",
+        args.image,
+        spec.code,
+        spec.width_px,
+        spec.height_px,
+        spec.dpi,
+    )
+
+    try:
+        poster_path = upscale_card_to_poster(
+            image_path=Path(args.image),
+            target_format=spec.code,
+            config=config,
+            max_retries=args.retries,
+        )
+        logger.success("Poster gerado com sucesso em: {}", poster_path)
+        return 0
+    except (FileNotFoundError, ValueError, GeminiBrowserError) as exc:
+        logger.error("Falha no upscaling para poster: {}", exc)
+        return 1
+
+
 def _normalize_argv(argv: Sequence[str]) -> List[str]:
     """Insere o subcomando padrão `card-gen` quando nenhum subcomando explícito é informado."""
     args_list = list(argv)
@@ -226,7 +309,7 @@ def _normalize_argv(argv: Sequence[str]) -> List[str]:
     first = args_list[0]
     if first in ("-h", "--help"):
         return args_list
-    if first not in CARD_GEN_COMMANDS:
+    if first not in ALL_SUBCOMMANDS:
         return ["card-gen", *args_list]
     return args_list
 
@@ -241,6 +324,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     command = getattr(args, "command", None) or "card-gen"
     if command in CARD_GEN_COMMANDS:
         return run_card_generator_cli(args)
+    if command in UPSCALE_COMMANDS:
+        return run_upscale_cli(args)
 
     parser.print_help()
     return 2
