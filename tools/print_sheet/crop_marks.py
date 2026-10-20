@@ -110,13 +110,17 @@ def draw_grid_crop_marks(
         if right_x2 > right_x1:
             draw.line([(right_x1, y), (right_x2, y)], fill=color, width=line_width_px)
 
-    # Caso exista espaçamento interno (gap_px > 0) entre as cartas, desenha marcas nos cruzamentos internos
-    if grid.gap_px > 0:
-        half_tick = max(4, min(mark_length_px // 3, grid.gap_px // 2))
+    # Caso exista espaçamento interno (gutters) entre as cartas, desenha marcas nos cruzamentos internos
+    has_gutters = getattr(grid, "gutter_x_px", 0) > 0 or getattr(grid, "gutter_y_px", 0) > 0 or grid.gap_px > 0
+    if has_gutters:
+        gx = getattr(grid, "gutter_x_px", 0) or grid.gap_px
+        gy = getattr(grid, "gutter_y_px", 0) or grid.gap_px
+        half_tick_x = max(4, min(mark_length_px // 3, gx // 2))
+        half_tick_y = max(4, min(mark_length_px // 3, gy // 2))
         for x in xs[1:-1]:
             for y in ys[1:-1]:
-                draw.line([(x - half_tick, y), (x + half_tick, y)], fill=color, width=line_width_px)
-                draw.line([(x, y - half_tick), (x, y + half_tick)], fill=color, width=line_width_px)
+                draw.line([(x - half_tick_x, y), (x + half_tick_x, y)], fill=color, width=line_width_px)
+                draw.line([(x, y - half_tick_y), (x, y + half_tick_y)], fill=color, width=line_width_px)
 
     return image
 

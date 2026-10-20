@@ -178,8 +178,8 @@ def _add_sheet_arguments(parser: argparse.ArgumentParser) -> None:
         "--paper",
         "-p",
         type=str,
-        default="a4",
-        help="Formato físico da folha ('a4' ou 'a3' a 300 DPI). Padrão: a4.",
+        default="super_a4",
+        help="Formato físico da folha ('super_a4', 'a4' ou 'a3' a 300 DPI). Padrão: super_a4.",
     )
     parser.add_argument(
         "--output",

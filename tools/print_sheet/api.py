@@ -41,16 +41,16 @@ def discover_card_images(
 def create_card_print_sheet(
     front_images: List[Union[str, Path]],
     back_image: Union[str, Path, List[Union[str, Path]]],
-    paper: str = "a4",
+    paper: str = "super_a4",
     output_pdf: Optional[Path] = None,
     config: Optional[AppConfig] = None,
 ) -> Path:
-    """Gera uma folha de impressão PDF (300 DPI) duplex com grade 3x3 de cartas e verso espelhado.
+    """Gera uma folha de impressão PDF (300 DPI) duplex com grade 3x3 de cartas e verso espelhado com sangria.
 
     Args:
         front_images: Lista de caminhos das imagens da frente das cartas.
         back_image: Caminho único para verso compartilhado ou lista de caminhos para versos individuais.
-        paper: Formato do papel ('a4' ou 'a3'). Padrão: 'a4'.
+        paper: Formato do papel ('super_a4', 'a4' ou 'a3'). Padrão: 'super_a4'.
         output_pdf: Caminho opcional de destino do arquivo PDF.
         config: Configuração operacional (`AppConfig`). Usa `DEFAULT_CONFIG` se omitido.
 

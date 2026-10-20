@@ -23,6 +23,19 @@ from tools.print_sheet import (
     DPI,
     MAX_CARDS_PER_SHEET,
     PAPER_SPECS,
+    SUPER_A4_GUTTER_X_MM,
+    SUPER_A4_GUTTER_X_PX,
+    SUPER_A4_GUTTER_Y_MM,
+    SUPER_A4_GUTTER_Y_PX,
+    SUPER_A4_HEIGHT_MM,
+    SUPER_A4_HEIGHT_PX,
+    SUPER_A4_WIDTH_MM,
+    SUPER_A4_WIDTH_PX,
+    TCG_BACK_HEIGHT_MM,
+    TCG_BACK_HEIGHT_PX,
+    TCG_BACK_WIDTH_MM,
+    TCG_BACK_WIDTH_PX,
+    TCG_BLEED_MM,
     TCG_CARD_HEIGHT_MM,
     TCG_CARD_HEIGHT_PX,
     TCG_CARD_WIDTH_MM,
@@ -68,10 +81,20 @@ def count_pdf_pages(pdf_path: Path) -> int:
 
 
 class TestCardGridGeometry(unittest.TestCase):
-    """Testa a geometria rigorosa da grade 3x3 em A4/A3 Studio Kustom a 300 DPI."""
+    """Testa a geometria rigorosa da grade 3x3 em Super A4 (230x320mm) e compatibilidade com A4/A3."""
 
     def test_studio_kustom_physical_specs_at_300_dpi(self) -> None:
-        """Verifica as dimensões exatas em mm e pixels de A4, A3 e Carta TCG a 300 DPI."""
+        """Verifica as dimensões exatas em mm e pixels de Super A4, A4, A3 e Carta TCG a 300 DPI."""
+        super_a4 = normalize_paper_spec("super_a4")
+        self.assertEqual((super_a4.width_mm, super_a4.height_mm), (230.0, 320.0))
+        self.assertEqual((super_a4.width_px, super_a4.height_px), (2717, 3780))
+        self.assertAlmostEqual(super_a4.aspect_ratio, 1.391, delta=0.002)
+        self.assertEqual(super_a4.dpi, 300)
+
+        # Aliases de super_a4
+        for alias in ("supera4", "super-a4", "SUPER_A4", "super_a4_v"):
+            self.assertEqual(normalize_paper_spec(alias).code, "SUPER_A4")
+
         a4 = normalize_paper_spec("a4")
         self.assertEqual((a4.width_mm, a4.height_mm), (210.0, 300.0))
         self.assertEqual((a4.width_px, a4.height_px), (2480, 3543))
@@ -84,9 +107,73 @@ class TestCardGridGeometry(unittest.TestCase):
         self.assertAlmostEqual(a3.aspect_ratio, 1.400, delta=0.002)
         self.assertEqual(a3.dpi, 300)
 
+        # Frente nominal (63x88mm)
         self.assertEqual((TCG_CARD_WIDTH_MM, TCG_CARD_HEIGHT_MM), (63.0, 88.0))
         self.assertEqual((TCG_CARD_WIDTH_PX, TCG_CARD_HEIGHT_PX), (744, 1039))
+
+        # Verso com sangria 3mm (69x94mm)
+        self.assertEqual((TCG_BACK_WIDTH_MM, TCG_BACK_HEIGHT_MM), (69.0, 94.0))
+        self.assertEqual((TCG_BACK_WIDTH_PX, TCG_BACK_HEIGHT_PX), (815, 1110))
+        self.assertEqual(TCG_BLEED_MM, 3.0)
+
         self.assertEqual(DPI, 300)
+
+    def test_super_a4_3x3_grid_geometry_margins_and_gutters(self) -> None:
+        """A grade 3x3 no Super A4 (230x320mm) deve possuir gutters de 12x14mm e margens de 8.5x14mm."""
+        imposition = CardGridImposition(paper="super_a4")
+
+        self.assertEqual(imposition.rows, 3)
+        self.assertEqual(imposition.cols, 3)
+        self.assertEqual(imposition.max_cards, 9)
+
+        # Gutters (canais de espaçamento entre cartas: 9mm horizontal / 14mm vertical)
+        self.assertAlmostEqual(imposition.gutter_x_mm, SUPER_A4_GUTTER_X_MM)
+        self.assertAlmostEqual(imposition.gutter_y_mm, SUPER_A4_GUTTER_Y_MM)
+        self.assertEqual(imposition.gutter_x_px, 106)
+        self.assertEqual(imposition.gutter_y_px, 165)
+
+        # Dimensões da grade total em mm e px: 207 x 292 mm
+        self.assertAlmostEqual(imposition.grid_width_mm, 207.0)
+        self.assertAlmostEqual(imposition.grid_height_mm, 292.0)
+        self.assertEqual(imposition.grid_width_px, 3 * 744 + 2 * 106)  # 2444 px
+        self.assertEqual(imposition.grid_height_px, 3 * 1039 + 2 * 165)  # 3447 px
+
+        # Margens laterais e verticais: 11.5 mm e 14.0 mm
+        self.assertAlmostEqual(imposition.margin_x_mm, 11.5)
+        self.assertAlmostEqual(imposition.margin_y_mm, 14.0)
+        self.assertEqual(imposition.margin_x_px, 136)  # (2717 - 2444) // 2
+        self.assertIn(imposition.margin_y_px, (165, 166))  # 14.0mm -> 165px / centralização -> 166px
+
+        # Slots da Frente (Página 1): 63 x 88 mm (744 x 1039 px)
+        front_slots = imposition.calculate_front_slots(9)
+        self.assertEqual(len(front_slots), 9)
+        for slot in front_slots:
+            self.assertFalse(slot.is_back)
+            self.assertEqual(slot.width_px, 744)
+            self.assertEqual(slot.height_px, 1039)
+            self.assertEqual(slot.bleed_mm, 0.0)
+
+        # Slots do Verso (Página 2): 69 x 94 mm (815 x 1110 px)
+        back_slots = imposition.calculate_back_slots(9)
+        self.assertEqual(len(back_slots), 9)
+        for slot in back_slots:
+            self.assertTrue(slot.is_back)
+            self.assertEqual(slot.width_px, 815)
+            self.assertEqual(slot.height_px, 1110)
+            self.assertEqual(slot.bleed_mm, 3.0)
+
+        # Validação do alinhamento dos versos com sangria (+3mm)
+        # Distância entre centros horizontais: 72 mm (850 px). Verso tem 69 mm (815 px) -> respiro de ~3.0 mm
+        dist_x_centers = abs(back_slots[1].center_px[0] - back_slots[0].center_px[0])
+        self.assertEqual(dist_x_centers, 744 + 106)  # 850 px
+        gap_between_backs_x = dist_x_centers - 815
+        self.assertEqual(gap_between_backs_x, 35)  # 35 px @ 300 DPI = ~2.96 mm (~3mm de respiro)
+
+        # Distância entre centros verticais: 102 mm (1204 px). Verso tem 94 mm (1110 px) -> respiro de ~8.0 mm
+        dist_y_centers = back_slots[3].center_px[1] - back_slots[0].center_px[1]
+        self.assertEqual(dist_y_centers, 1039 + 165)  # 1204 px
+        gap_between_backs_y = dist_y_centers - 1110
+        self.assertEqual(gap_between_backs_y, 94)  # 94 px @ 300 DPI = ~7.96 mm (~8mm de respiro)
 
     def test_a4_3x3_grid_margins_and_centering(self) -> None:
         """A grade 3x3 (189x264mm) em folha A4 (210x300mm) deve ter margens exatas de 10.5mm e 18.0mm."""
@@ -127,7 +214,7 @@ class TestCardGridGeometry(unittest.TestCase):
 
     def test_invalid_card_count_or_paper_raises_value_error(self) -> None:
         """Deve rejeitar quantidades inválidas de cartas por folha (<1 ou >9) e papéis desconhecidos."""
-        imposition = CardGridImposition(paper="a4")
+        imposition = CardGridImposition(paper="super_a4")
         with self.assertRaises(ValueError):
             imposition.calculate_front_slots(0)
         with self.assertRaises(ValueError):
@@ -137,11 +224,11 @@ class TestCardGridGeometry(unittest.TestCase):
 
 
 class TestHorizontalDuplexMirroring(unittest.TestCase):
-    """Testa rigorosamente o espelhamento horizontal do verso (coluna 0 <-> coluna 2)."""
+    """Testa rigorosamente o espelhamento horizontal do verso (coluna 0 <-> coluna 2) e centro óptico."""
 
-    def test_back_slots_invert_columns_in_every_row(self) -> None:
-        """Na página 2 (Verso), a coluna 0 da frente deve virar coluna 2, 1->1 e 2->0 em todas as linhas."""
-        imposition = CardGridImposition(paper="a4")
+    def test_back_slots_invert_columns_in_every_row_and_match_optical_center(self) -> None:
+        """Na página 2 (Verso), o centro óptico X'_c = folha_largura - X_c e as colunas são invertidas."""
+        imposition = CardGridImposition(paper="super_a4")
         front_slots = imposition.calculate_front_slots(9)
         back_slots = imposition.calculate_back_slots(9)
 
@@ -151,22 +238,27 @@ class TestHorizontalDuplexMirroring(unittest.TestCase):
 
             # Mesma linha vertical
             self.assertEqual(f_slot.row, b_slot.row)
-            self.assertEqual(f_slot.y_px, b_slot.y_px)
 
             # Coluna espelhada: 0 -> 2, 1 -> 1, 2 -> 0
             expected_back_col = 2 - f_slot.col
             self.assertEqual(b_slot.col, expected_back_col)
 
-            # A coordenada X da carta na coluna c na frente deve ser idêntica à coordenada X
-            # da carta na coluna (2 - c) no verso
-            partner_front_slot = imposition.get_slot(f_slot.row * 3 + expected_back_col, is_back=False)
-            self.assertEqual(b_slot.x_px, partner_front_slot.x_px)
+            # Centro óptico do verso posicionado rigorosamente em (X'_c, Y_c)
+            # onde X'_c = folha_largura - X_c
+            f_cx, f_cy = f_slot.center_px
+            b_cx, b_cy = b_slot.center_px
+            self.assertEqual(b_cx, imposition.sheet_width_px - f_cx)
+            self.assertEqual(b_cy, f_cy)
+
+            # Verso com sangria de 3mm por borda (69 x 94 mm / 815 x 1110 px)
+            self.assertEqual(b_slot.width_px, 815)
+            self.assertEqual(b_slot.height_px, 1110)
+            self.assertEqual(b_slot.bleed_mm, 3.0)
 
     def test_rendered_duplex_sheets_pixel_exact_column_mirroring(self) -> None:
         """Verifica nos pixels renderizados que a carta da coluna 0 na frente casa com a coluna 2 no verso."""
-        imposition = CardGridImposition(paper="a4")
+        imposition = CardGridImposition(paper="super_a4")
 
-        # 9 cores distintas para identificar inequivocamente cada carta (0 a 8)
         palette: List[Tuple[int, int, int]] = [
             (220, 20, 60),    # Carta 0 (Linha 0, Col 0 na frente -> Linha 0, Col 2 no verso)
             (30, 144, 255),   # Carta 1 (Linha 0, Col 1 na frente -> Linha 0, Col 1 no verso)
@@ -180,55 +272,53 @@ class TestHorizontalDuplexMirroring(unittest.TestCase):
         ]
 
         fronts = [make_solid_card(color) for color in palette]
-        backs = [make_solid_card(color) for color in palette]
+        backs = [make_solid_card(color, size=(TCG_BACK_WIDTH_PX, TCG_BACK_HEIGHT_PX)) for color in palette]
 
         front_page, back_page = imposition.render_duplex_sheets(fronts, backs, draw_marks=True)
-        self.assertEqual(front_page.size, (2480, 3543))
-        self.assertEqual(back_page.size, (2480, 3543))
+        self.assertEqual(front_page.size, (2717, 3780))
+        self.assertEqual(back_page.size, (2717, 3780))
 
         front_slots = imposition.calculate_front_slots(9)
+        back_slots = imposition.calculate_back_slots(9)
+
         for row in range(3):
-            slot_col0 = front_slots[row * 3 + 0]
-            slot_col1 = front_slots[row * 3 + 1]
-            slot_col2 = front_slots[row * 3 + 2]
+            f_col0 = front_slots[row * 3 + 0]
+            f_col1 = front_slots[row * 3 + 1]
+            f_col2 = front_slots[row * 3 + 2]
 
-            # Na frente: col 0 tem cor[row*3+0], col 1 tem cor[row*3+1], col 2 tem cor[row*3+2]
-            self.assertEqual(front_page.getpixel(slot_col0.center_px), palette[row * 3 + 0])
-            self.assertEqual(front_page.getpixel(slot_col1.center_px), palette[row * 3 + 1])
-            self.assertEqual(front_page.getpixel(slot_col2.center_px), palette[row * 3 + 2])
+            b_col0 = back_slots[row * 3 + 0]  # verso da carta da col 0 (renderizada na col 2 física do verso)
+            b_col1 = back_slots[row * 3 + 1]  # verso da carta da col 1 (renderizada na col 1 física do verso)
+            b_col2 = back_slots[row * 3 + 2]  # verso da carta da col 2 (renderizada na col 0 física do verso)
 
-            # No verso: a posição física da col 2 recebe o verso da carta da col 0 da frente!
-            self.assertEqual(
-                back_page.getpixel(slot_col2.center_px),
-                front_page.getpixel(slot_col0.center_px),
-            )
-            # A posição física da col 0 no verso recebe o verso da carta da col 2 da frente!
-            self.assertEqual(
-                back_page.getpixel(slot_col0.center_px),
-                front_page.getpixel(slot_col2.center_px),
-            )
-            # A coluna central (col 1) permanece no centro!
-            self.assertEqual(
-                back_page.getpixel(slot_col1.center_px),
-                front_page.getpixel(slot_col1.center_px),
-            )
+            # Frente
+            self.assertEqual(front_page.getpixel(f_col0.center_px), palette[row * 3 + 0])
+            self.assertEqual(front_page.getpixel(f_col1.center_px), palette[row * 3 + 1])
+            self.assertEqual(front_page.getpixel(f_col2.center_px), palette[row * 3 + 2])
+
+            # Verso no centro óptico correspondente
+            self.assertEqual(back_page.getpixel(b_col0.center_px), palette[row * 3 + 0])
+            self.assertEqual(back_page.getpixel(b_col1.center_px), palette[row * 3 + 1])
+            self.assertEqual(back_page.getpixel(b_col2.center_px), palette[row * 3 + 2])
 
     def test_single_card_front_col0_renders_at_back_col2(self) -> None:
-        """Se houver apenas 1 carta (col 0 na frente), seu verso deve ser impresso na col 2 do verso."""
-        imposition = CardGridImposition(paper="a4")
+        """Se houver apenas 1 carta (col 0 na frente), seu verso deve ser impresso na col 2 física do verso."""
+        imposition = CardGridImposition(paper="super_a4")
         front_card = make_solid_card((200, 40, 40))
-        shared_back = make_solid_card((40, 80, 200))
+        shared_back = make_solid_card((40, 80, 200), size=(TCG_BACK_WIDTH_PX, TCG_BACK_HEIGHT_PX))
 
         front_page, back_page = imposition.render_duplex_sheets([front_card], shared_back)
-        slot_col0 = imposition.get_slot(0, is_back=False)
-        slot_col2 = imposition.get_slot(2, is_back=False)
+        slot0_front = imposition.get_slot(0, is_back=False)
+        slot0_back = imposition.get_slot(0, is_back=True)
+        slot2_front = imposition.get_slot(2, is_back=False)
 
-        self.assertEqual(front_page.getpixel(slot_col0.center_px), (200, 40, 40))
-        self.assertEqual(front_page.getpixel(slot_col2.center_px), (255, 255, 255))
+        # Na frente: col 0 tem arte vermelha, col 2 está em branco
+        self.assertEqual(front_page.getpixel(slot0_front.center_px), (200, 40, 40))
+        self.assertEqual(front_page.getpixel(slot2_front.center_px), (255, 255, 255))
 
-        # No verso, a col 0 fica em branco e a col 2 recebe o verso azul!
-        self.assertEqual(back_page.getpixel(slot_col0.center_px), (255, 255, 255))
-        self.assertEqual(back_page.getpixel(slot_col2.center_px), (40, 80, 200))
+        # No verso: o verso da carta 0 está no centro óptico de slot0_back (col 2 do verso)
+        self.assertEqual(back_page.getpixel(slot0_back.center_px), (40, 80, 200))
+        # E a col 0 física do verso (mesma posição X da col 0 da frente) permanece em branco
+        self.assertEqual(back_page.getpixel(slot0_front.center_px), (255, 255, 255))
 
 
 class TestCropMarksAndRegistration(unittest.TestCase):
@@ -239,13 +329,14 @@ class TestCropMarksAndRegistration(unittest.TestCase):
         self.assertAlmostEqual(CROP_LINE_WIDTH_MM, 0.25)
         self.assertEqual(CROP_LINE_WIDTH_PX, 3)
 
-        imposition = CardGridImposition(paper="a4")
+        imposition = CardGridImposition(paper="super_a4")
         sheet = imposition.render_front_sheet([make_solid_card((120, 180, 240))], draw_marks=True)
+        self.assertEqual(sheet.size, (2717, 3780))
 
         # Verifica as 4 cruzes de registro nos cantos da folha
         for cx, cy in get_registration_centers(
             sheet.size,
-            corner_offset_px=(imposition.margin_x_px // 2, imposition.margin_y_px // 2),
+            corner_offset_px=(max(48, imposition.margin_x_px // 2), max(48, imposition.margin_y_px // 2)),
         ):
             self.assertEqual(sheet.getpixel((cx, cy)), (0, 0, 0))
 
@@ -264,7 +355,7 @@ class TestPDFBuilderAndPosters(unittest.TestCase):
     """Testa a geração de PDFs multipágina em 300 DPI para cartas duplex e folhas de pôster A4/A3."""
 
     def test_create_card_print_sheet_generates_2_page_duplex_pdf(self) -> None:
-        """Deve gerar um arquivo PDF válido com 2 páginas (Frente e Verso) para até 9 cartas."""
+        """Deve gerar um arquivo PDF válido com 2 páginas (Frente e Verso) no formato Super A4 (230x320mm)."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             config = AppConfig(
@@ -280,13 +371,13 @@ class TestPDFBuilderAndPosters(unittest.TestCase):
                 front_paths.append(p)
 
             back_path = tmp_path / "VersoPadrao.png"
-            make_solid_card((30, 30, 90)).save(back_path, format="PNG")
+            make_solid_card((30, 30, 90), size=(TCG_BACK_WIDTH_PX, TCG_BACK_HEIGHT_PX)).save(back_path, format="PNG")
 
-            out_pdf = tmp_path / "output" / "folha_cartas_a4.pdf"
+            out_pdf = tmp_path / "output" / "folha_cartas_super_a4.pdf"
             result_path = create_card_print_sheet(
                 front_images=front_paths,
                 back_image=back_path,
-                paper="a4",
+                paper="super_a4",
                 output_pdf=out_pdf,
                 config=config,
             )
@@ -340,9 +431,9 @@ class TestPrintSheetCLI(unittest.TestCase):
             verso = cards_dir / "VersoPadrao.png"
             make_solid_card((210, 50, 50)).save(c1, format="PNG")
             make_solid_card((50, 210, 50)).save(c2, format="PNG")
-            make_solid_card((40, 40, 120)).save(verso, format="PNG")
+            make_solid_card((40, 40, 120), size=(TCG_BACK_WIDTH_PX, TCG_BACK_HEIGHT_PX)).save(verso, format="PNG")
 
-            # 1. Subcomando 'sheet' com --cards explícito
+            # 1. Subcomando 'sheet' com --cards explícito e --paper super_a4
             pdf_cards = tmp_path / "explicit_cards.pdf"
             code1 = cli.main(
                 [
@@ -353,7 +444,7 @@ class TestPrintSheetCLI(unittest.TestCase):
                     "--back",
                     str(verso),
                     "--paper",
-                    "a4",
+                    "super_a4",
                     "--output",
                     str(pdf_cards),
                     "--no-file-log",
@@ -363,7 +454,7 @@ class TestPrintSheetCLI(unittest.TestCase):
             self.assertTrue(pdf_cards.is_file())
             self.assertEqual(count_pdf_pages(pdf_cards), 2)
 
-            # 2. Alias 'folha' com --cards-dir (deve excluir VersoPadrao.png automaticamente)
+            # 2. Alias 'folha' com --cards-dir e formato padrão da CLI (super_a4 implícito)
             discovered = discover_card_images(cards_dir, exclude_paths=[verso])
             self.assertEqual(len(discovered), 2)
 
@@ -375,8 +466,6 @@ class TestPrintSheetCLI(unittest.TestCase):
                     str(cards_dir),
                     "--back",
                     str(verso),
-                    "--paper",
-                    "a4",
                     "-o",
                     str(pdf_dir),
                     "--no-file-log",

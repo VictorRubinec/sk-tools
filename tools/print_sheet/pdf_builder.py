@@ -87,7 +87,7 @@ def render_poster_sheet_image(
 def build_card_sheet_pdf(
     front_images: Sequence[Union[str, Path, Image.Image]],
     back_image: Union[str, Path, Image.Image, Sequence[Union[str, Path, Image.Image]]],
-    paper: str = "a4",
+    paper: str = "super_a4",
     output_pdf: Optional[Union[str, Path]] = None,
     config: Optional[AppConfig] = None,
     draw_marks: bool = True,
