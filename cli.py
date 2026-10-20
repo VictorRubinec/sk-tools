@@ -7,7 +7,7 @@ import json
 import sys
 from dataclasses import replace
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Union
 
 from pydantic import ValidationError
 
@@ -24,6 +24,8 @@ from tools.card_generator.core.config import AppConfig, DEFAULT_CONFIG, INPUT_DI
 from tools.card_generator.core.logger import logger, setup_logger
 from tools.card_generator.core.runner import CardGenerationRunner
 from tools.card_generator.core.schema import CardInput, load_cards_from_file
+from tools.mug_artist.api import create_mug_artwork
+from tools.mug_artist.composer import DEFAULT_MUG_SPEC, normalize_mug_mode
 from tools.print_sheet.api import (
     create_card_print_sheet,
     create_poster_print_sheet,
@@ -37,8 +39,13 @@ CARD_GEN_COMMANDS = {"card-gen", "cards", "card"}
 UPSCALE_COMMANDS = {"upscale", "poster", "up"}
 EXPAND_COMMANDS = {"expand", "outpaint", "bg"}
 SHEET_COMMANDS = {"sheet", "print-sheet", "folha", "imposition"}
+MUG_COMMANDS = {"mug", "caneca", "mug-art"}
 ALL_SUBCOMMANDS = (
-    CARD_GEN_COMMANDS | UPSCALE_COMMANDS | EXPAND_COMMANDS | SHEET_COMMANDS
+    CARD_GEN_COMMANDS
+    | UPSCALE_COMMANDS
+    | EXPAND_COMMANDS
+    | SHEET_COMMANDS
+    | MUG_COMMANDS
 )
 
 
@@ -191,6 +198,58 @@ def _add_sheet_arguments(parser: argparse.ArgumentParser) -> None:
     _add_common_logging_arguments(parser)
 
 
+def _add_mug_arguments(parser: argparse.ArgumentParser) -> None:
+    """Adiciona os argumentos da ferramenta `mug` (arte de caneca 11oz) em um subparser."""
+    parser.add_argument(
+        "--image",
+        "-i",
+        type=str,
+        default=None,
+        help="Caminho de uma imagem única para arte da caneca (ex: output/sua_carta.png).",
+    )
+    parser.add_argument(
+        "--images",
+        nargs="+",
+        type=str,
+        default=None,
+        help="Lista de caminhos de imagens para arte de caneca (ex: output/carta1.png output/carta2.png).",
+    )
+    parser.add_argument(
+        "--mode",
+        "-m",
+        type=str,
+        default="panoramic",
+        help="Modo de layout da caneca ('panoramic', 'dual_face' ou 'card_plus_text'). Padrão: panoramic.",
+    )
+    parser.add_argument(
+        "--text",
+        type=str,
+        default=None,
+        help="Texto comemorativo ou mensagem para a outra face (modo 'card_plus_text').",
+    )
+    parser.add_argument(
+        "--mirror",
+        dest="mirror",
+        action="store_true",
+        default=True,
+        help="Gera a arte espelhada horizontalmente para prensa de sublimação (padrão: True).",
+    )
+    parser.add_argument(
+        "--no-mirror",
+        dest="mirror",
+        action="store_false",
+        help="Desativa o espelhamento horizontal (gera apenas a arte em orientação normal).",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        default=None,
+        help="Caminho opcional do arquivo PNG de saída.",
+    )
+    _add_common_logging_arguments(parser)
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     """Constrói e retorna o parser de argumentos da CLI com suporte a subcomandos."""
     parser = argparse.ArgumentParser(
@@ -198,7 +257,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description=(
             "Suíte unificada de automação Studio Kustom (sk-tools). "
             "Inclui gerador de cartas (card-gen), upscaler de posters (upscale), "
-            "expansor de fundo (expand) e imposição gráfica PDF (sheet)."
+            "expansor de fundo (expand), imposição gráfica PDF (sheet) e criador de canecas (mug)."
         ),
     )
     _add_card_gen_arguments(parser)
@@ -240,6 +299,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description="Gera folhas de impressão PDF a 300 DPI com marcas de corte e cruzes de registro.",
     )
     _add_sheet_arguments(sheet_parser)
+
+    mug_parser = subparsers.add_parser(
+        "mug",
+        aliases=["caneca", "mug-art"],
+        help="Criador de arte para caneca de sublimação 11oz (220x95mm / 2598x1122px a 300 DPI).",
+        description=(
+            "Gera artes de caneca 11oz com compensação cromática (+18% saturação Epson L110), "
+            "prévia visual e versão espelhada para transfer térmico."
+        ),
+    )
+    _add_mug_arguments(mug_parser)
 
     return parser
 
@@ -546,6 +616,70 @@ def run_sheet_cli(args: argparse.Namespace) -> int:
         return 1
 
 
+def run_mug_cli(args: argparse.Namespace) -> int:
+    """Executa o fluxo operacional do subcomando `mug` (arte de caneca 11oz)."""
+    setup_logger(
+        console_level=args.log_level,
+        log_to_file=not args.no_file_log,
+    )
+
+    try:
+        mode_spec = normalize_mug_mode(args.mode)
+    except ValueError as exc:
+        logger.error("Erro de parâmetro em --mode: {}", exc)
+        return 2
+
+    if not args.image and not args.images:
+        logger.error("Informe --image (ou --images) para gerar a arte da caneca.")
+        return 2
+
+    if args.image and args.images:
+        logger.error("Informe apenas --image ou --images, não ambos simultaneamente.")
+        return 2
+
+    image_input: Union[str, Path, Sequence[Union[str, Path]]]
+    if args.images:
+        image_input = [Path(p) for p in args.images]
+    else:
+        image_input = Path(args.image)
+
+    config = replace(
+        DEFAULT_CONFIG,
+        headless=True if args.headless else DEFAULT_CONFIG.headless,
+    )
+    config.ensure_directories()
+
+    output_path = Path(args.output) if args.output else None
+
+    logger.info(
+        "Iniciando SK-TOOLS [mug] | Modo: {} | Caneca 11oz ({}x{}px @ {} DPI) | Espelhar Transfer: {}",
+        mode_spec.code,
+        DEFAULT_MUG_SPEC.width_px,
+        DEFAULT_MUG_SPEC.height_px,
+        DEFAULT_MUG_SPEC.dpi,
+        args.mirror,
+    )
+
+    try:
+        transfer_path, preview_path = create_mug_artwork(
+            image_or_images=image_input,
+            mode=mode_spec.code,
+            text=args.text,
+            mirror_for_transfer=args.mirror,
+            config=config,
+            output_path=output_path,
+        )
+        logger.success(
+            "Arte de caneca concluída | Principal: '{}' | Prévia: '{}'",
+            transfer_path,
+            preview_path,
+        )
+        return 0
+    except (FileNotFoundError, ValueError, GeminiBrowserError) as exc:
+        logger.error("Falha ao gerar arte de caneca: {}", exc)
+        return 1
+
+
 def _normalize_argv(argv: Sequence[str]) -> List[str]:
     """Insere o subcomando padrão `card-gen` quando nenhum subcomando explícito é informado."""
     args_list = list(argv)
@@ -575,6 +709,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return run_expand_cli(args)
     if command in SHEET_COMMANDS:
         return run_sheet_cli(args)
+    if command in MUG_COMMANDS:
+        return run_mug_cli(args)
 
     parser.print_help()
     return 2
