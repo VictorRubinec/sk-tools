@@ -167,12 +167,18 @@ def run_background_expansion_orchestration(
                 last_errors = ["Nenhum binário de imagem retornado pelo Gemini."]
                 continue
 
+            with Image.open(source_path) as src_im:
+                src_trimmed = img_validator.trim_black_borders(src_im.convert("RGB"))
+                source_had_black_borders = src_trimmed.size != src_im.size
+            allow_black = preserve_frame or source_had_black_borders
+
             conformed_bytes = img_validator.conform_expanded_image(
                 raw_bytes=raw_expanded_bytes,
                 base_size=base_size,
                 mode=spec.code,
                 bleed_mm=bleed_mm,
                 custom_size=custom_size,
+                allow_black_borders=allow_black,
             )
             validation = img_validator.validate_expanded_image(
                 image_path_or_bytes=conformed_bytes,
@@ -180,6 +186,7 @@ def run_background_expansion_orchestration(
                 mode=spec.code,
                 bleed_mm=bleed_mm,
                 custom_size=custom_size,
+                allow_black_borders=allow_black,
             )
 
             if validation.is_valid:

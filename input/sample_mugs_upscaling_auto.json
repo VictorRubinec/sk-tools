@@ -1,0 +1,38 @@
+[
+  {
+    "tema": "Aquarela / Pintura Digital",
+    "estilo": "Panoramico",
+    "titulo": "Aquarela Ilustrada Familia",
+    "descricao": "Estilo de arte em pintura aquarela requintada para caneca panorâmica de 220x95mm a 300 DPI. Com base na foto de referência anexa: na face esquerda, recriar o casal em aquarela expressiva e acolhedora com traços delicados a lápis, iluminação suave e textura luminosa; na face direita, recriar a família completa com o filho sorridente com a mesma harmonia visual. Bordas orgânicas e esfumadas de tinta que se fundem suavemente ao fundo. Fundo contínuo de lavagem em aquarela pastel com azul celeste suave, pêssego quente e sutis respingos artísticos dourados que fluem de uma ponta à outra da caneca sem costuras.",
+    "mensagem": "O amor da nossa família é a nossa maior obra de arte.",
+    "cores": ["Azul Celeste", "Pessegos Suaves", "Dourado", "Branco"],
+    "imagens_referencia": [
+      "D:/Desktop/Códigos/upscaling-auto/data/input/mug/aquarela_familia.png"
+    ],
+    "espelhar_transfer": true
+  },
+  {
+    "tema": "Caricatura Editorial 2D",
+    "estilo": "Dual Face",
+    "titulo": "Caricatura Editorial Familia",
+    "descricao": "Estilo de caricatura editorial 2D estilizada e moderna com design geométrico angular (traços facetados, queixos definidos, olhos dinâmicos e expressivos, line art preta marcante e pintura cel-shaded com sombras duras e sem gradientes fotográficos). Na face esquerda, o casal transformado em caricaturas geométricas com iluminação facetada; na face direita, a família reunida com o menino sorridente no mesmo estilo angular. Fundo contemporâneo com blocos de cores e divisões diagonais em terracota, verde sálvia suave e ocre, conectando harmoniosamente as duas faces na faixa retangular de 220x95mm.",
+    "mensagem": "Momentos únicos que marcam a nossa história com alegria.",
+    "cores": ["Terracota", "Verde Salvia", "Ocre", "Preto Grafite"],
+    "imagens_referencia": [
+      "D:/Desktop/Códigos/upscaling-auto/data/input/mug/caricatura_editorial.png"
+    ],
+    "espelhar_transfer": true
+  },
+  {
+    "tema": "Dia dos Professores / Afetivo",
+    "estilo": "Card + Mensagem",
+    "titulo": "Pro Glacy Melhor Professora",
+    "descricao": "Design afetivo, minimalista e de alto padrão em fundo branco puro (#FFFFFF). Na face esquerda da caneca (X ≈ 25%), posicionar a foto de referência da professora dentro de uma elegante moldura fotográfica estilo Polaroid instantânea, ligeiramente inclinada em ângulo natural com sombra suave e realista projetada sobre o fundo branco. Na face direita da caneca (X ≈ 75%), renderizar lettering caligráfico caloroso e artesanal em português com destaque para a frase e um símbolo vibrante de coração vermelho. Layout retangular plano 2D unrolled sem mockups 3D.",
+    "mensagem": "Feliz dia dos professores pra melhor! Prô Glacy ❤️",
+    "cores": ["Branco Puro", "Vermelho Rubi", "Cinza Grafite"],
+    "imagens_referencia": [
+      "D:/Desktop/Códigos/upscaling-auto/data/input/mug/pro_glacy.jpg"
+    ],
+    "espelhar_transfer": true
+  }
+]

@@ -62,6 +62,7 @@ class ExpandedImageValidator:
         mode: str = "bleed_5mm",
         bleed_mm: float = DEFAULT_BLEED_MM,
         custom_size: Optional[Tuple[int, int]] = None,
+        allow_black_borders: bool = False,
     ) -> ExpansionValidationResult:
         """Valida integridade, ausência de barras pretas e dimensões finais com sangria 300 DPI.
 
@@ -152,10 +153,15 @@ class ExpandedImageValidator:
 
         # 3. Detecção de barras pretas periféricas (pillarbox/letterbox)
         has_black_borders = trimmed_img.size != rgb_img.size
-        if has_black_borders:
+        if has_black_borders and not allow_black_borders:
             errors.append(
                 f"Barras pretas periféricas detectadas nas bordas (dimensão útil reduzida de "
                 f"{width}x{height}px para {trimmed_img.width}x{trimmed_img.height}px)."
+            )
+        elif has_black_borders and allow_black_borders:
+            warnings.append(
+                f"Bordas escuras detectadas, mas permitidas pela arte de origem / moldura ornamental "
+                f"({trimmed_img.width}x{trimmed_img.height}px vs {width}x{height}px)."
             )
 
         # 4. Orientação exigida para modos panorâmicos
@@ -192,6 +198,7 @@ class ExpandedImageValidator:
         mode: str = "bleed_5mm",
         bleed_mm: float = DEFAULT_BLEED_MM,
         custom_size: Optional[Tuple[int, int]] = None,
+        allow_black_borders: bool = False,
     ) -> bytes:
         """Remove eventuais barras pretas periféricas e padroniza a resolução final com sangria 300 DPI."""
         spec = normalize_expansion_mode(mode)
@@ -216,7 +223,7 @@ class ExpandedImageValidator:
                 if mean_std_dev < self.min_std_dev_threshold:
                     return raw_bytes
 
-                cleaned_img = self.trim_black_borders(rgb_img)
+                cleaned_img = rgb_img if allow_black_borders else self.trim_black_borders(rgb_img)
                 if spec.requires_horizontal_orientation and cleaned_img.width <= cleaned_img.height:
                     return raw_bytes
 

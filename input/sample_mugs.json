@@ -1,0 +1,32 @@
+[
+  {
+    "tema": "Yu-Gi-Oh!",
+    "estilo": "Panoramico",
+    "titulo": "Laço do amor eterno",
+    "descricao": "Ilustração em estilo anime/mangá shonen romântico do casal com aura mística e brilho cintilante característico de carta de armadilha contínua de Yu-Gi-Oh!, expandindo-se em um cenário cósmico e vibrante ao longo de toda a caneca.",
+    "mensagem": "Esta carta pode ser ativada quando você estiver tendo um dia ruim. Se estiver desanimado, ela restaurará seu bom humor. Enquanto ativa, você sempre terá alguém para compartilhar suas vitórias e tornar os dias especiais.",
+    "cores": ["Rosa", "Armadilha", "Dourado"],
+    "imagens_referencia": ["input/sample_reference.png"],
+    "espelhar_transfer": true
+  },
+  {
+    "tema": "Pokemon",
+    "estilo": "Dual Face",
+    "titulo": "Power Couple VMAX",
+    "descricao": "Ilustração do casal em traje elegante e alegre em meio a um jardim tropical com palmeiras, transformados em treinadores Pokémon em estilo anime de Pokémon TCG VMAX, com efeitos de energia luminosa e foco expressivo.",
+    "mensagem": "HP 2023 - Habilidade: Conexão Infinita. Ataque: Amor Lendário 300+.",
+    "cores": ["Fada", "Elétrico", "Rosa", "Amarelo"],
+    "imagens_referencia": ["input/sample_reference.png"],
+    "espelhar_transfer": true
+  },
+  {
+    "tema": "Magic",
+    "estilo": "Card + Mensagem",
+    "titulo": "Parceira de Todas as Jornadas",
+    "descricao": "Ilustração artística de casal em estilo pintura digital de alta fantasia de Magic: The Gathering, transformando a fisionomia e traços da foto de referência em uma arte épica e romântica com iluminação dramática no lado esquerdo.",
+    "mensagem": "Mesmo a distância, você continua sendo a minha melhor jogada. Não importa o tempo ou os desafios, você sempre será o meu lugar seguro. ♥",
+    "cores": ["Branco", "Vermelho", "Dourado"],
+    "imagens_referencia": ["input/sample_reference.png"],
+    "espelhar_transfer": true
+  }
+]

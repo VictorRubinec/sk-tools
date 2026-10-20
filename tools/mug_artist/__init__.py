@@ -1,6 +1,6 @@
 """Módulo Criador de Arte para Caneca de Sublimação 11oz / 325ml a 300 DPI (tools/mug_artist)."""
 
-from tools.mug_artist.api import create_mug_artwork
+from tools.mug_artist.api import create_mug_artwork, generate_mug_artwork
 from tools.mug_artist.color_engine import (
     DEFAULT_SATURATION_BOOST,
     apply_sublimation_compensation,
@@ -33,11 +33,26 @@ from tools.mug_artist.composer import (
     mm_to_px,
     normalize_mug_mode,
 )
-from tools.mug_artist.orchestrator import run_mug_artwork_orchestration
+from tools.mug_artist.orchestrator import (
+    conform_and_compensate_mug_image,
+    run_mug_artwork_orchestration,
+)
+from tools.mug_artist.prompt_builder import (
+    CRITICAL_NEGATIVE_CONSTRAINT,
+    MugPromptBuilder,
+)
+from tools.mug_artist.schema import (
+    STANDARD_MUG_STYLES,
+    STANDARD_MUG_THEMES,
+    MugInput,
+    load_mugs_from_file,
+    slugify,
+)
 
 __all__ = [
     "CENTER_FACE_CENTER_X_PX",
     "CENTER_FACE_CENTER_X_RATIO",
+    "CRITICAL_NEGATIVE_CONSTRAINT",
     "DEFAULT_MUG_SPEC",
     "DEFAULT_SATURATION_BOOST",
     "DPI",
@@ -56,14 +71,22 @@ __all__ = [
     "MUG_WIDTH_MM",
     "MUG_WIDTH_PX",
     "MugArtworkComposer",
+    "MugInput",
     "MugLayoutModeSpec",
+    "MugPromptBuilder",
     "MugSpec",
     "RIGHT_FACE_CENTER_X_PX",
     "RIGHT_FACE_CENTER_X_RATIO",
+    "STANDARD_MUG_STYLES",
+    "STANDARD_MUG_THEMES",
     "apply_sublimation_compensation",
+    "conform_and_compensate_mug_image",
     "create_mug_artwork",
+    "generate_mug_artwork",
+    "load_mugs_from_file",
     "mirror_for_sublimation",
     "mm_to_px",
     "normalize_mug_mode",
     "run_mug_artwork_orchestration",
+    "slugify",
 ]

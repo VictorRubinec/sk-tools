@@ -2,23 +2,31 @@
 
 from __future__ import annotations
 
+import io
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Tuple
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from PIL import Image, ImageEnhance, ImageOps
+from pydantic import ValidationError
+from PIL import Image, ImageDraw, ImageEnhance, ImageOps
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import cli
+from tools.card_generator.browser.exceptions import (
+    GeminiImageNotGeneratedError,
+    GeminiSessionNotAuthenticatedError,
+)
+from tools.card_generator.browser.gemini_client import GeminiClient
 from tools.card_generator.core.config import AppConfig
 from tools.mug_artist import (
     CENTER_FACE_CENTER_X_PX,
+    CRITICAL_NEGATIVE_CONSTRAINT,
     DEFAULT_MUG_SPEC,
     DEFAULT_SATURATION_BOOST,
     DPI,
@@ -35,8 +43,13 @@ from tools.mug_artist import (
     MUG_WIDTH_PX,
     RIGHT_FACE_CENTER_X_PX,
     MugArtworkComposer,
+    MugInput,
+    MugPromptBuilder,
     apply_sublimation_compensation,
+    conform_and_compensate_mug_image,
     create_mug_artwork,
+    generate_mug_artwork,
+    load_mugs_from_file,
     mirror_for_sublimation,
     mm_to_px,
     normalize_mug_mode,
@@ -407,6 +420,393 @@ class TestMugArtistOrchestratorAndCLI(unittest.TestCase):
         self.assertEqual(cli.main(["mug", "--mode", "panoramic", "--no-file-log"]), 2)
         self.assertEqual(
             cli.main(["mug", "--image", "inexistente.png", "--mode", "modo_x", "--no-file-log"]),
+            2,
+        )
+
+
+def make_synthetic_mug_bytes(
+    width: int = 2400,
+    height: int = 1000,
+    add_black_borders: bool = False,
+) -> bytes:
+    """Gera bytes de uma imagem sintética para simular o retorno do Gemini."""
+    img = Image.new("RGB", (width, height), color=(40, 80, 160))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle(
+        [width // 8, height // 8, (width * 7) // 8, (height * 7) // 8],
+        fill=(220, 140, 50),
+    )
+    if add_black_borders:
+        draw.rectangle([0, 0, 40, height], fill=(0, 0, 0))
+        draw.rectangle([width - 40, 0, width, height], fill=(0, 0, 0))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+class TestMugInputSchemaAndFileLoading(unittest.TestCase):
+    """Testes unitários para o schema Pydantic MugInput e carregamento de arquivos JSON."""
+
+    def test_valid_mug_input_and_normalization(self) -> None:
+        """Deve validar e normalizar os campos obrigatórios e defaults de MugInput."""
+        mug = MugInput(
+            tema="  yu-gi-oh!  ",
+            estilo="  panoramico  ",
+            titulo="  Laço do Amor Eterno  ",
+            descricao="Cena romântica com dragões.",
+            mensagem="Para você com amor.",
+            cores=["Rosa", "Dourado"],
+            espelhar_transfer=True,
+        )
+        self.assertEqual(mug.tema, "Yu-Gi-Oh!")
+        self.assertEqual(mug.estilo, "Panoramico")
+        self.assertEqual(mug.titulo, "Laço do Amor Eterno")
+        self.assertEqual(mug.descricao, "Cena romântica com dragões.")
+        self.assertEqual(mug.mensagem, "Para você com amor.")
+        self.assertEqual(mug.cores_lista, ["Rosa", "Dourado"])
+        self.assertTrue(mug.espelhar_transfer)
+        self.assertEqual(mug.slug, "yu_gi_oh_laco_do_amor_eterno")
+
+    def test_style_and_theme_normalization_and_aliases(self) -> None:
+        """Deve mapear aliases de temas conhecidos e estilos para suas formas canônicas."""
+        themes_map = {
+            "magic": "Magic",
+            "mtg": "Magic",
+            "pokemon": "Pokemon",
+            "pokémon": "Pokemon",
+            "one piece": "One Piece",
+            "onepiece": "One Piece",
+        }
+        for raw, expected in themes_map.items():
+            mug = MugInput(tema=raw, estilo="Dual Face", titulo="Título Teste")
+            self.assertEqual(mug.tema, expected)
+
+        styles_map = {
+            "panoramico": "Panoramico",
+            "panoramic": "Panoramico",
+            "dual face": "Dual Face",
+            "dual_face": "Dual Face",
+            "dual-face": "Dual Face",
+            "card + mensagem": "Card + Mensagem",
+            "card_plus_text": "Card + Mensagem",
+            "card + texto": "Card + Mensagem",
+            "text": "Card + Mensagem",
+        }
+        for raw_style, expected_style in styles_map.items():
+            mug = MugInput(tema="Pokemon", estilo=raw_style, titulo="Título Teste")
+            self.assertEqual(mug.estilo, expected_style)
+
+    def test_schema_validates_required_fields_and_forbids_extra(self) -> None:
+        """Deve rejeitar tema vazio, título vazio, estilo desconhecido e campos extras."""
+        with self.assertRaises(ValidationError):
+            MugInput(tema="", estilo="Panoramico", titulo="Teste")
+        with self.assertRaises(ValidationError):
+            MugInput(tema="Pokemon", estilo="", titulo="Teste")
+        with self.assertRaises(ValidationError):
+            MugInput(tema="Pokemon", estilo="Panoramico", titulo="")
+        with self.assertRaises(ValidationError):
+            MugInput(tema="Pokemon", estilo="estilo_invalido", titulo="Teste")
+        with self.assertRaises(ValidationError):
+            MugInput(
+                tema="Pokemon",
+                estilo="Panoramico",
+                titulo="Teste",
+                campo_inexistente="extra",  # type: ignore[call-arg]
+            )
+
+    def test_cores_string_and_list_support(self) -> None:
+        """Deve suportar cor como string única delimitada por vírgula ou lista de strings."""
+        m1 = MugInput(tema="Pokemon", estilo="Panoramico", titulo="T1", cores="Azul, Branco")
+        self.assertEqual(m1.cores_lista, ["Azul", "Branco"])
+
+        m2 = MugInput(tema="Pokemon", estilo="Panoramico", titulo="T2", cores=["Vermelho", "Preto"])
+        self.assertEqual(m2.cores_lista, ["Vermelho", "Preto"])
+
+        m3 = MugInput(tema="Pokemon", estilo="Panoramico", titulo="T3", cores=None)
+        self.assertEqual(m3.cores_lista, [])
+
+        with self.assertRaises(ValidationError):
+            MugInput(tema="Pokemon", estilo="Panoramico", titulo="T4", cores="")
+        with self.assertRaises(ValidationError):
+            MugInput(tema="Pokemon", estilo="Panoramico", titulo="T5", cores=[])
+
+    def test_imagens_referencia_validation_with_disk_check(self) -> None:
+        """Deve aceitar caminhos existentes e rejeitar arquivos inexistentes em disco."""
+        ref_file = Path("input/sample_reference.png")
+        self.assertTrue(ref_file.is_file(), "Arquivo sample_reference.png deve existir para o teste.")
+
+        valid_mug = MugInput(
+            tema="Yu-Gi-Oh!",
+            estilo="Dual Face",
+            titulo="Com Referência",
+            imagens_referencia=["input/sample_reference.png"],
+        )
+        self.assertEqual(valid_mug.imagens_referencia, ["input/sample_reference.png"])
+
+        with self.assertRaises(ValidationError):
+            MugInput(
+                tema="Yu-Gi-Oh!",
+                estilo="Dual Face",
+                titulo="Sem Referência",
+                imagens_referencia=["input/caminho_inexistente_99999.png"],
+            )
+
+    def test_load_mugs_from_file_with_sample_mugs_json(self) -> None:
+        """Deve carregar com sucesso o arquivo input/sample_mugs.json com as 3 canecas dos pedidos 176, 165 e 164."""
+        sample_path = PROJECT_ROOT / "input" / "sample_mugs.json"
+        self.assertTrue(sample_path.is_file())
+
+        mugs = load_mugs_from_file(sample_path)
+        self.assertEqual(len(mugs), 3)
+
+        # 1. Pedido 176: Yu-Gi-Oh!
+        self.assertEqual(mugs[0].tema, "Yu-Gi-Oh!")
+        self.assertEqual(mugs[0].estilo, "Panoramico")
+        self.assertEqual(mugs[0].titulo, "Laço do amor eterno")
+        self.assertTrue(mugs[0].espelhar_transfer)
+
+        # 2. Pedido 165: Pokémon
+        self.assertEqual(mugs[1].tema, "Pokemon")
+        self.assertEqual(mugs[1].estilo, "Dual Face")
+        self.assertEqual(mugs[1].titulo, "Power Couple VMAX")
+
+        # 3. Pedido 164: Magic
+        self.assertEqual(mugs[2].tema, "Magic")
+        self.assertEqual(mugs[2].estilo, "Card + Mensagem")
+        self.assertEqual(mugs[2].titulo, "Parceira de Todas as Jornadas")
+
+        # Teste de tratamento de arquivo inexistente e JSON inválido
+        with self.assertRaises(FileNotFoundError):
+            load_mugs_from_file("input/inexistente.json")
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+            tf.write("{bad json}")
+            bad_path = tf.name
+        try:
+            with self.assertRaises(ValueError):
+                load_mugs_from_file(bad_path)
+        finally:
+            Path(bad_path).unlink(missing_ok=True)
+
+
+class TestMugPromptBuilder(unittest.TestCase):
+    """Testa a geração rigorosa de prompts técnicos para a IA no MugPromptBuilder."""
+
+    def setUp(self) -> None:
+        self.builder = MugPromptBuilder()
+
+    def test_prompt_contains_crucial_negative_constraint_against_3d_mockups(self) -> None:
+        """O prompt DEVE conter a restrição negativa crucial exata anti-mockup 3D."""
+        mug = MugInput(
+            tema="Yu-Gi-Oh!",
+            estilo="Panoramico",
+            titulo="Armadilha Romântica",
+            descricao="Cena épica de anime.",
+        )
+        prompt = self.builder.build_prompt(mug)
+
+        self.assertIn(CRITICAL_NEGATIVE_CONSTRAINT, prompt)
+        self.assertIn("NÃO gere um mockup 3D de xícara ou caneca cerâmica", prompt)
+        self.assertIn("220x95mm", prompt)
+        self.assertIn("2.31:1", prompt)
+        self.assertIn("300 DPI", prompt)
+
+    def test_prompt_includes_all_required_sections_and_layouts(self) -> None:
+        """Verifica seções estruturadas para Panorâmico, Dual Face e Card + Mensagem."""
+        for estilo in ("Panoramico", "Dual Face", "Card + Mensagem"):
+            with self.subTest(estilo=estilo):
+                mug = MugInput(
+                    tema="Magic",
+                    estilo=estilo,
+                    titulo=f"Arte {estilo}",
+                    descricao="Descrição artística da cena.",
+                    mensagem="Mensagem de teste.",
+                    cores=["Branco", "Azul"],
+                    imagens_referencia=["input/sample_reference.png"],
+                )
+                prompt = self.builder.build_prompt(mug)
+
+                self.assertIn("# PAPEL E ESPECIALIDADE DA IA", prompt)
+                self.assertIn("# INSTRUÇÃO PRINCIPAL DE LAYOUT E FORMATO", prompt)
+                self.assertIn("# DETALHES DA CANECA", prompt)
+                self.assertIn("# DIREÇÃO DE ARTE CONFORME O LAYOUT", prompt)
+                self.assertIn("# IMAGENS ANEXAS DE REFERÊNCIA", prompt)
+                self.assertIn("# RESTRIÇÃO NEGATIVA CRUCIAL (OBRIGATÓRIO)", prompt)
+                self.assertIn(mug.titulo, prompt)
+                self.assertIn(mug.tema, prompt)
+                self.assertIn("Branco, Azul", prompt)
+
+
+class TestMugGenerativeOrchestratorAndCLI(unittest.TestCase):
+    """Testa o fluxo generativo do orquestrador com o Gemini e a execução da CLI."""
+
+    def test_conform_and_compensate_mug_image_removes_bars_and_fits_2598x1122(self) -> None:
+        """Deve cortar barras pretas, escalar proporcionalmente para 2598x1122 e aplicar +18% de saturação."""
+        raw_bytes = make_synthetic_mug_bytes(width=2200, height=1000, add_black_borders=True)
+        conformed = conform_and_compensate_mug_image(raw_bytes, saturation_boost=1.18)
+
+        self.assertEqual(conformed.size, (2598, 1122))
+        self.assertEqual(conformed.info.get("dpi"), (300, 300))
+        self.assertEqual(conformed.mode, "RGB")
+
+    @patch("tools.mug_artist.orchestrator.get_chrome_context")
+    def test_run_mug_artwork_orchestration_generative_full_flow(
+        self, mock_get_context: MagicMock
+    ) -> None:
+        """Deve executar o fluxo ponta a ponta com MugInput gerando preview e transfer espelhado."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = AppConfig(
+                base_dir=tmp_path,
+                input_dir=tmp_path / "input",
+                output_dir=tmp_path / "output",
+            )
+
+            mock_context = MagicMock()
+            mock_page = MagicMock()
+            mock_context.pages = [mock_page]
+            mock_get_context.return_value = mock_context
+
+            mock_client = MagicMock(spec=GeminiClient)
+            mock_client.check_login_status.return_value = True
+            mock_client.extract_latest_generated_image.return_value = make_synthetic_mug_bytes(
+                width=2400, height=1000, add_black_borders=False
+            )
+
+            mug = MugInput(
+                tema="Pokemon",
+                estilo="Dual Face",
+                titulo="Power Couple VMAX",
+                descricao="Ilustração de casal estilo anime Pokémon.",
+                mensagem="HP 2023 - Amor Lendário.",
+                cores=["Fada", "Elétrico"],
+                imagens_referencia=["input/sample_reference.png"],
+                espelhar_transfer=True,
+            )
+
+            transfer_path, preview_path = run_mug_artwork_orchestration(
+                mug_input=mug,
+                config=config,
+                client=mock_client,
+            )
+
+            self.assertIsNotNone(preview_path)
+            assert preview_path is not None
+            self.assertTrue(transfer_path.is_file())
+            self.assertTrue(preview_path.is_file())
+
+            # Verifica dimensões e espelhamento
+            with Image.open(transfer_path) as t_img, Image.open(preview_path) as p_img:
+                self.assertEqual(t_img.size, (2598, 1122))
+                self.assertEqual(p_img.size, (2598, 1122))
+                self.assertEqual(
+                    tuple(round(v) for v in t_img.info.get("dpi", ())), (300, 300)
+                )
+                self.assertEqual(
+                    tuple(round(v) for v in p_img.info.get("dpi", ())), (300, 300)
+                )
+
+                expected_mirror = ImageOps.mirror(p_img)
+                self.assertEqual(
+                    t_img.getpixel((650, 561)),
+                    expected_mirror.getpixel((650, 561)),
+                )
+
+            # Verifica chamadas ao GeminiClient
+            mock_client.send_prompt.assert_called_once()
+            mock_client.upload_reference_images.assert_called_once()
+            mock_client.submit_prompt.assert_called_once()
+            mock_client.wait_for_generation_complete.assert_called_once()
+            mock_context.close.assert_called_once()
+
+    @patch("tools.mug_artist.orchestrator.get_chrome_context")
+    def test_generative_orchestrator_raises_when_not_authenticated(
+        self, mock_get_context: MagicMock
+    ) -> None:
+        """Deve levantar GeminiSessionNotAuthenticatedError se check_login_status for False."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config = AppConfig(base_dir=tmp_path, output_dir=tmp_path / "output")
+
+            mock_context = MagicMock()
+            mock_context.pages = [MagicMock()]
+            mock_get_context.return_value = mock_context
+
+            mock_client = MagicMock(spec=GeminiClient)
+            mock_client.check_login_status.return_value = False
+
+            mug = MugInput(tema="Magic", estilo="Panoramico", titulo="Teste Login")
+            with self.assertRaises(GeminiSessionNotAuthenticatedError):
+                run_mug_artwork_orchestration(
+                    mug_input=mug,
+                    config=config,
+                    client=mock_client,
+                )
+
+    def test_cli_mug_with_input_sample_mugs_json(self) -> None:
+        """Deve processar as 3 canecas de input/sample_mugs.json via CLI."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            dummy_transfer = tmp_path / "dummy_transfer.png"
+            dummy_preview = tmp_path / "dummy_preview.png"
+            Image.new("RGB", (2598, 1122)).save(dummy_transfer)
+            Image.new("RGB", (2598, 1122)).save(dummy_preview)
+
+            with patch(
+                "cli.run_mug_artwork_orchestration",
+                return_value=(dummy_transfer, dummy_preview),
+            ) as mock_orch, patch("cli.get_chrome_context") as mock_get_context:
+                mock_context = MagicMock()
+                mock_get_context.return_value = mock_context
+
+                exit_code = cli.main(
+                    [
+                        "mug",
+                        "--input",
+                        "input/sample_mugs.json",
+                        "--no-file-log",
+                        "--headless",
+                    ]
+                )
+                self.assertEqual(exit_code, 0)
+                # Deve ter chamado o orquestrador para as 3 canecas
+                self.assertEqual(mock_orch.call_count, 3)
+                mock_context.close.assert_called_once()
+
+    def test_cli_mug_with_inline_mug_json(self) -> None:
+        """Deve aceitar especificação inline de caneca via --mug."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            dummy_transfer = tmp_path / "dummy_transfer.png"
+            dummy_preview = tmp_path / "dummy_preview.png"
+            Image.new("RGB", (2598, 1122)).save(dummy_transfer)
+            Image.new("RGB", (2598, 1122)).save(dummy_preview)
+
+            with patch(
+                "cli.run_mug_artwork_orchestration",
+                return_value=(dummy_transfer, dummy_preview),
+            ) as mock_orch:
+                inline_payload = (
+                    '{"tema": "Pokemon", "estilo": "Panoramico", "titulo": "Pikachu Flash"}'
+                )
+                exit_code = cli.main(
+                    [
+                        "mug",
+                        "--mug",
+                        inline_payload,
+                        "--no-file-log",
+                    ]
+                )
+                self.assertEqual(exit_code, 0)
+                mock_orch.assert_called_once()
+
+    def test_cli_mug_with_invalid_inline_mug_json_returns_error(self) -> None:
+        """Deve retornar erro código 2 para JSON sintaticamente inválido ou dados que falham na validação."""
+        # JSON quebrado
+        self.assertEqual(cli.main(["mug", "--mug", "{json_quebrado", "--no-file-log"]), 2)
+        # Campo inválido (tema vazio)
+        self.assertEqual(
+            cli.main(["mug", "--mug", '{"tema": "", "estilo": "Panoramico", "titulo": "X"}', "--no-file-log"]),
             2,
         )
 

@@ -5,6 +5,7 @@ from tools.print_sheet.api import (
     create_poster_print_sheet,
     discover_card_images,
 )
+from tools.print_sheet.card_backs import resolve_card_back_by_game
 from tools.print_sheet.card_grid import (
     DPI,
     GRID_COLS,
@@ -97,5 +98,6 @@ __all__ = [
     "mm_to_px",
     "normalize_paper_spec",
     "render_poster_sheet_image",
+    "resolve_card_back_by_game",
     "save_pages_to_pdf",
 ]

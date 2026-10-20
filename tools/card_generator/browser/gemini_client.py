@@ -286,8 +286,22 @@ class GeminiClient:
             prompt_box = page.locator(self.PROMPT_BOX_SELECTOR).first
             send_btn = page.locator(self.SEND_BUTTON_SELECTOR)
             if send_btn.count() > 0 and send_btn.first.is_visible():
-                send_btn.first.click()
+                btn_target = send_btn.first
+                try:
+                    page.wait_for_function(
+                        "btn => btn && !btn.disabled && !btn.hasAttribute('disabled') && btn.getAttribute('aria-disabled') !== 'true'",
+                        arg=btn_target.element_handle(),
+                        timeout=15000,
+                    )
+                except Exception:
+                    pass
+                try:
+                    btn_target.click(timeout=8000)
+                except Exception:
+                    prompt_box.focus()
+                    prompt_box.press("Enter")
             else:
+                prompt_box.focus()
                 prompt_box.press("Enter")
             logger.debug("Prompt disparado com sucesso.")
         except Exception as exc:
