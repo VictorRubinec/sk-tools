@@ -11,6 +11,12 @@ from typing import List, Optional, Sequence
 
 from pydantic import ValidationError
 
+from tools.background_expander.api import expand_background
+from tools.background_expander.prompt_builder import (
+    DEFAULT_BLEED_MM,
+    calculate_bleed_pixels,
+    normalize_expansion_mode,
+)
 from tools.card_generator.api import check_gemini_session as api_check_gemini_session
 from tools.card_generator.browser.exceptions import GeminiBrowserError
 from tools.card_generator.browser.session import get_chrome_context
@@ -23,7 +29,8 @@ from tools.upscaler.prompt_builder import normalize_target_format
 
 CARD_GEN_COMMANDS = {"card-gen", "cards", "card"}
 UPSCALE_COMMANDS = {"upscale", "poster", "up"}
-ALL_SUBCOMMANDS = CARD_GEN_COMMANDS | UPSCALE_COMMANDS
+EXPAND_COMMANDS = {"expand", "outpaint", "bg"}
+ALL_SUBCOMMANDS = CARD_GEN_COMMANDS | UPSCALE_COMMANDS | EXPAND_COMMANDS
 
 
 def _add_common_logging_arguments(parser: argparse.ArgumentParser) -> None:
@@ -97,13 +104,39 @@ def _add_upscale_arguments(parser: argparse.ArgumentParser) -> None:
     _add_common_logging_arguments(parser)
 
 
+def _add_expand_arguments(parser: argparse.ArgumentParser) -> None:
+    """Adiciona os argumentos da ferramenta `expand` em um subparser."""
+    parser.add_argument(
+        "--image",
+        "-i",
+        type=str,
+        required=True,
+        help="Caminho da imagem original para expansão de fundo (outpainting).",
+    )
+    parser.add_argument(
+        "--mode",
+        "-m",
+        type=str,
+        default="bleed_5mm",
+        help="Modo de expansão de fundo ('bleed_5mm', 'horizontal', 'caneca', 'custom').",
+    )
+    parser.add_argument(
+        "--bleed",
+        "-b",
+        type=float,
+        default=DEFAULT_BLEED_MM,
+        help="Milímetros de margem de sangria por borda a 300 DPI (padrão: 5.0).",
+    )
+    _add_common_logging_arguments(parser)
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     """Constrói e retorna o parser de argumentos da CLI com suporte a subcomandos."""
     parser = argparse.ArgumentParser(
         prog="sk-tools",
         description=(
             "Suíte unificada de automação Studio Kustom (sk-tools). "
-            "Inclui o gerador de cartas (card-gen) e o upscaler de posters 300 DPI (upscale)."
+            "Inclui gerador de cartas (card-gen), upscaler de posters (upscale) e expansor de fundo (expand)."
         ),
     )
     _add_card_gen_arguments(parser)
@@ -129,6 +162,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description="Realiza o redraw e super-resolução de uma carta para poster em 300 DPI.",
     )
     _add_upscale_arguments(upscale_parser)
+
+    expand_parser = subparsers.add_parser(
+        "expand",
+        aliases=["outpaint", "bg"],
+        help="Expansor generativo de fundo (outpainting) com sangria de 5mm a 300 DPI.",
+        description="Estende o cenário ao redor da imagem mantendo o sujeito central preservado.",
+    )
+    _add_expand_arguments(expand_parser)
 
     return parser
 
@@ -301,6 +342,53 @@ def run_upscale_cli(args: argparse.Namespace) -> int:
         return 1
 
 
+def run_expand_cli(args: argparse.Namespace) -> int:
+    """Executa o fluxo operacional do subcomando `expand` (outpainting)."""
+    setup_logger(
+        console_level=args.log_level,
+        log_to_file=not args.no_file_log,
+    )
+
+    if args.retries < 1:
+        logger.error("O argumento --retries deve ser maior ou igual a 1.")
+        return 2
+
+    try:
+        spec = normalize_expansion_mode(args.mode)
+        bleed_px = calculate_bleed_pixels(args.bleed)
+    except ValueError as exc:
+        logger.error("Erro de parâmetro em expand: {}", exc)
+        return 2
+
+    config = replace(
+        DEFAULT_CONFIG,
+        headless=True if args.headless else DEFAULT_CONFIG.headless,
+    )
+    config.ensure_directories()
+
+    logger.info(
+        "Iniciando SK-TOOLS [expand] | Imagem: '{}' | Modo: {} | Sangria: {:.1f}mm ({}px/borda @ 300 DPI)",
+        args.image,
+        spec.code,
+        args.bleed,
+        bleed_px,
+    )
+
+    try:
+        expanded_path = expand_background(
+            image_path=Path(args.image),
+            mode=spec.code,
+            bleed_mm=args.bleed,
+            config=config,
+            max_retries=args.retries,
+        )
+        logger.success("Imagem expandida gerada com sucesso em: {}", expanded_path)
+        return 0
+    except (FileNotFoundError, ValueError, GeminiBrowserError) as exc:
+        logger.error("Falha na expansão de fundo: {}", exc)
+        return 1
+
+
 def _normalize_argv(argv: Sequence[str]) -> List[str]:
     """Insere o subcomando padrão `card-gen` quando nenhum subcomando explícito é informado."""
     args_list = list(argv)
@@ -326,6 +414,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return run_card_generator_cli(args)
     if command in UPSCALE_COMMANDS:
         return run_upscale_cli(args)
+    if command in EXPAND_COMMANDS:
+        return run_expand_cli(args)
 
     parser.print_help()
     return 2
