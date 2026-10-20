@@ -158,7 +158,9 @@ class UpscalePromptBuilder:
             "[RESTRIÇÕES NEGATIVAS OBRIGATÓRIAS]\n"
             "Evite estritamente: sem perda de semelhança facial; sem ruídos digitais ou pixelização; "
             "sem dedos ou membros deformados; sem textos ilegíveis ou distorcidos; "
-            "sem bordas brancas externas ou cortes indevidos na composição."
+            "sem bordas brancas externas ou cortes indevidos na composição; "
+            "sem barras pretas laterais (sem pillarboxing); sem faixas pretas no topo ou base (sem letterboxing); "
+            "preenchimento total da arte de ponta a ponta sem margens pretas de compensação."
         )
 
         return "\n\n".join(sections)

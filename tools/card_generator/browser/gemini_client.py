@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import base64
+import io
+import re
 import time
 from pathlib import Path
 from typing import List, Optional, Sequence, Union
 
+from PIL import Image
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -414,6 +417,33 @@ class GeminiClient:
             logger.debug("Imagem ainda sendo processada pelo Gemini, aguardando...")
             page.wait_for_timeout(1500)
 
+    @staticmethod
+    def _trim_screenshot_borders(raw_bytes: bytes) -> bytes:
+        """Remove barras pretas periféricas caso o screenshot capture padding/pillarboxing do DOM."""
+        try:
+            with Image.open(io.BytesIO(raw_bytes)) as img:
+                rgb_img = img.convert("RGB")
+                gray = rgb_img.convert("L")
+                thresh = gray.point(lambda p: 255 if p > 20 else 0)
+                bbox = thresh.getbbox()
+                if not bbox:
+                    return raw_bytes
+                left, top, right, bottom = bbox
+                max_w = int(rgb_img.width * 0.25)
+                max_h = int(rgb_img.height * 0.25)
+                crop_left = left if left <= max_w else 0
+                crop_top = top if top <= max_h else 0
+                crop_right = right if (rgb_img.width - right) <= max_w else rgb_img.width
+                crop_bottom = bottom if (rgb_img.height - bottom) <= max_h else rgb_img.height
+                if crop_left > 0 or crop_top > 0 or crop_right < rgb_img.width or crop_bottom < rgb_img.height:
+                    cropped = rgb_img.crop((crop_left, crop_top, crop_right, crop_bottom))
+                    buf = io.BytesIO()
+                    cropped.save(buf, format="PNG")
+                    return buf.getvalue()
+                return raw_bytes
+        except Exception:
+            return raw_bytes
+
     def extract_latest_generated_image(self, page: Page) -> Optional[bytes]:
         """Localiza e baixa o arquivo original da última imagem gerada na conversa.
 
@@ -466,21 +496,19 @@ class GeminiClient:
             # 1. Estratégia Prioritária: Download Nativo do arquivo original via botão
             try:
                 logger.info("Localizando botão de download nativo no card da imagem...")
+                target_img.scroll_into_view_if_needed()
+                target_img.hover()
                 img_container = page.locator(".image-container, model-response").last
                 if img_container.count() > 0:
-                    img_container.scroll_into_view_if_needed()
                     img_container.hover()
-                else:
-                    target_img.scroll_into_view_if_needed()
-                    target_img.hover()
 
-                page.wait_for_timeout(800)
+                page.wait_for_timeout(600)
 
                 download_btn = page.locator(self.DOWNLOAD_BUTTON_SELECTOR).last
                 if download_btn.count() > 0:
                     logger.info("Acionando botão de download nativo do Gemini...")
-                    with page.expect_download(timeout=15000) as download_info:
-                        download_btn.click()
+                    with page.expect_download(timeout=12000) as download_info:
+                        download_btn.click(force=True)
                     download = download_info.value
                     temp_path = download.path()
                     if temp_path and Path(temp_path).exists():
@@ -490,8 +518,8 @@ class GeminiClient:
                                 f"Download nativo concluído com sucesso ({len(downloaded_bytes):,} bytes)!"
                             )
                             return downloaded_bytes
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Download nativo via botão não completou: {exc}")
 
             # 2. Se for data:image/base64, decodifica diretamente
             if src.startswith("data:image/") and "," in src:
@@ -523,19 +551,29 @@ class GeminiClient:
 
             # 4. Estratégia de Download HTTP direto via Playwright Request
             if src.startswith("http://") or src.startswith("https://"):
-                try:
-                    response = page.request.get(src)
-                    if response.ok:
-                        body = response.body()
-                        if body and len(body) > 1024:
-                            return body
-                except Exception:
-                    pass
+                urls_to_try = [src]
+                if "=s" in src and "googleusercontent.com" in src:
+                    high_res_url = re.sub(r"=s\d+", "=s0", src)
+                    if high_res_url != src:
+                        urls_to_try.insert(0, high_res_url)
+
+                for u in urls_to_try:
+                    try:
+                        response = page.request.get(u)
+                        if response.ok:
+                            body = response.body()
+                            if body and len(body) > 1024:
+                                return body
+                    except Exception:
+                        pass
 
             # 5. Fallback para screenshot apenas se todas as tentativas de download falharem
             screenshot_bytes = target_img.screenshot(type="png")
             if isinstance(screenshot_bytes, bytes) and len(screenshot_bytes) > 0:
-                return screenshot_bytes
+                logger.warning(
+                    "Download direto indisponível; utilizando fallback de screenshot com remoção de bordas DOM."
+                )
+                return self._trim_screenshot_borders(screenshot_bytes)
 
             raise GeminiImageNotGeneratedError(
                 "A imagem gerada foi localizada no DOM, mas não foi possível extrair seus bytes."

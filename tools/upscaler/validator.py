@@ -159,11 +159,48 @@ class PosterImageValidator:
             warnings=warnings,
         )
 
+    @staticmethod
+    def trim_black_borders(
+        img: Image.Image,
+        threshold: int = 20,
+        max_margin_ratio: float = 0.20,
+    ) -> Image.Image:
+        """Detecta e remove margens/barras pretas (pillarboxing/letterboxing) nas bordas da imagem.
+
+        Converte temporariamente para escala de cinza e analisa o bounding box de pixels úteis
+        acima do threshold de luminância (para ignorar ruído de compressão JPEG/dark mode).
+        """
+        if img.width <= 0 or img.height <= 0:
+            return img
+
+        gray = img.convert("L")
+        thresh = gray.point(lambda p: 255 if p > threshold else 0)
+        bbox = thresh.getbbox()
+        if not bbox:
+            return img
+
+        left, top, right, bottom = bbox
+        max_w = int(img.width * max_margin_ratio)
+        max_h = int(img.height * max_margin_ratio)
+
+        # Limita o corte caso a margem detectada exceda a tolerância máxima
+        crop_left = left if left <= max_w else 0
+        crop_top = top if top <= max_h else 0
+        crop_right = right if (img.width - right) <= max_w else img.width
+        crop_bottom = bottom if (img.height - bottom) <= max_h else img.height
+
+        if crop_left > 0 or crop_top > 0 or crop_right < img.width or crop_bottom < img.height:
+            if crop_right > crop_left and crop_bottom > crop_top:
+                return img.crop((crop_left, crop_top, crop_right, crop_bottom))
+        return img
+
     def conform_to_poster_spec(
         self, raw_bytes: bytes, target_format: str
     ) -> bytes:
         """Ajusta uma imagem válida gerada pelo Gemini para a resolução exata de 300 DPI do formato alvo.
 
+        Remove barras pretas periféricas (pillarbox/letterbox) e aplica escalonamento com
+        sangria mínima (center-crop cover) para preservar estritamente a proporção original da arte.
         Preserva falhas caso a imagem original seja corrompida, muito pequena (< 512px),
         monocromática ou esteja na orientação incorreta, garantindo que o validador as reprove.
         """
@@ -184,15 +221,32 @@ class PosterImageValidator:
                 if spec.orientation == "horizontal" and width <= height:
                     return raw_bytes
 
-                if (width, height) == (spec.width_px, spec.height_px):
-                    return raw_bytes
+                # 1. Apara qualquer barra preta periférica (pillarboxing/letterboxing)
+                cleaned_img = self.trim_black_borders(rgb_img)
 
-                resized = rgb_img.resize(
-                    (spec.width_px, spec.height_px),
+                # Se a imagem limpa já estiver na resolução exata do formato
+                if cleaned_img.size == (spec.width_px, spec.height_px):
+                    out_buffer = io.BytesIO()
+                    cleaned_img.save(out_buffer, format="PNG", dpi=(spec.dpi, spec.dpi))
+                    return out_buffer.getvalue()
+
+                # 2. Escalonamento proporcional com corte central de sangria (center-crop cover)
+                target_w, target_h = spec.width_px, spec.height_px
+                scale = max(target_w / cleaned_img.width, target_h / cleaned_img.height)
+                new_w = int(round(cleaned_img.width * scale))
+                new_h = int(round(cleaned_img.height * scale))
+
+                scaled = cleaned_img.resize(
+                    (new_w, new_h),
                     resample=Image.Resampling.LANCZOS,
                 )
+
+                left = max(0, (new_w - target_w) // 2)
+                top = max(0, (new_h - target_h) // 2)
+                final_poster = scaled.crop((left, top, left + target_w, top + target_h))
+
                 out_buffer = io.BytesIO()
-                resized.save(out_buffer, format="PNG", dpi=(spec.dpi, spec.dpi))
+                final_poster.save(out_buffer, format="PNG", dpi=(spec.dpi, spec.dpi))
                 return out_buffer.getvalue()
         except Exception:
             return raw_bytes

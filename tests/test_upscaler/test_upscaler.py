@@ -106,6 +106,8 @@ class TestUpscalePromptBuilder(unittest.TestCase):
                 self.assertIn("fisionomia", prompt.lower())
                 self.assertIn("traços nítidos", prompt.lower())
                 self.assertIn("ruídos digitais", prompt.lower())
+                self.assertIn("pillarbox", prompt.lower())
+                self.assertIn("letterbox", prompt.lower())
 
     def test_build_prompt_with_extra_instructions(self) -> None:
         """Deve anexar instruções complementares quando fornecidas."""
@@ -155,6 +157,41 @@ class TestPosterImageValidator(unittest.TestCase):
         res = self.validator.validate_poster(conformed, "a4_v")
         self.assertTrue(res.is_valid)
         self.assertEqual((res.width, res.height), (2480, 3543))
+
+    def test_trim_black_borders_removes_pillarboxing_and_letterboxing(self) -> None:
+        """Deve detectar e remover barras pretas artificiais simuladas nas laterais."""
+        # Imagem 1000x1400 com 50px de barra preta à esquerda e 50px à direita
+        base_img = Image.new("RGB", (900, 1400), color=(180, 100, 50))
+        letterboxed = Image.new("RGB", (1000, 1400), color=(0, 0, 0))
+        letterboxed.paste(base_img, (50, 0))
+
+        trimmed = PosterImageValidator.trim_black_borders(letterboxed, threshold=20)
+        self.assertEqual(trimmed.size, (900, 1400))
+
+    def test_conform_to_poster_spec_removes_black_bars_and_covers_target(self) -> None:
+        """Deve eliminar barras pretas e preencher a área do poster sem faixas pretas residuais."""
+        # Cria imagem com barras pretas nas bordas
+        inner_img = Image.new("RGB", (800, 1200), color=(200, 120, 40))
+        draw = ImageDraw.Draw(inner_img)
+        draw.ellipse([200, 200, 600, 1000], fill=(50, 200, 100))
+
+        bar_img = Image.new("RGB", (900, 1200), color=(0, 0, 0))
+        bar_img.paste(inner_img, (50, 0))
+        buf = io.BytesIO()
+        bar_img.save(buf, format="PNG")
+
+        conformed = self.validator.conform_to_poster_spec(buf.getvalue(), "a4_v")
+        res = self.validator.validate_poster(conformed, "a4_v")
+        self.assertTrue(res.is_valid)
+        self.assertEqual((res.width, res.height), (2480, 3543))
+
+        # Confirma que os cantos e margens externas do poster conformed não são pretos
+        with Image.open(io.BytesIO(conformed)) as out_img:
+            # Colunas da extrema esquerda e direita devem ter cor do conteúdo (não preto)
+            left_pixel = out_img.getpixel((0, out_img.height // 2))
+            right_pixel = out_img.getpixel((out_img.width - 1, out_img.height // 2))
+            self.assertGreater(sum(left_pixel), 60)
+            self.assertGreater(sum(right_pixel), 60)
 
 
 class TestUpscalerOrchestratorAndCLI(unittest.TestCase):
