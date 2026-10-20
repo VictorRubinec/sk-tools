@@ -127,6 +127,13 @@ def _add_expand_arguments(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_BLEED_MM,
         help="Milímetros de margem de sangria por borda a 300 DPI (padrão: 5.0).",
     )
+    parser.add_argument(
+        "--preserve-frame",
+        "--frame",
+        "-f",
+        action="store_true",
+        help="Mantém a moldura ornamental fixa no centro e expande o cenário de fundo para fora dela.",
+    )
     _add_common_logging_arguments(parser)
 
 
@@ -366,12 +373,14 @@ def run_expand_cli(args: argparse.Namespace) -> int:
     )
     config.ensure_directories()
 
+    preserve_frame = getattr(args, "preserve_frame", False)
     logger.info(
-        "Iniciando SK-TOOLS [expand] | Imagem: '{}' | Modo: {} | Sangria: {:.1f}mm ({}px/borda @ 300 DPI)",
+        "Iniciando SK-TOOLS [expand] | Imagem: '{}' | Modo: {} | Sangria: {:.1f}mm ({}px/borda @ 300 DPI) | Preservar Moldura: {}",
         args.image,
         spec.code,
         args.bleed,
         bleed_px,
+        preserve_frame,
     )
 
     try:
@@ -379,6 +388,7 @@ def run_expand_cli(args: argparse.Namespace) -> int:
             image_path=Path(args.image),
             mode=spec.code,
             bleed_mm=args.bleed,
+            preserve_frame=preserve_frame,
             config=config,
             max_retries=args.retries,
         )

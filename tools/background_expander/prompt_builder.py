@@ -172,6 +172,7 @@ class BackgroundExpansionPromptBuilder:
         base_size: Optional[Tuple[int, int]] = None,
         custom_size: Optional[Tuple[int, int]] = None,
         extra_instructions: Optional[str] = None,
+        preserve_frame: bool = False,
     ) -> str:
         """Monta o prompt estruturado de expansão de fundo para envio ao Gemini.
 
@@ -239,16 +240,47 @@ class BackgroundExpansionPromptBuilder:
             ),
         ]
 
+        if preserve_frame:
+            sections.append(
+                "[REGRA CRÍTICA: PRESERVAÇÃO DE MOLDURA E SANGRIA EXTERNA]\n"
+                "- A imagem anexa possui uma moldura ou borda ornamental (como frisos dourados, rosas-dos-ventos, "
+                "filetes decorativos, linhas de enquadramento ou elementos de carta gráfica).\n"
+                "- Essa moldura decorativa DEVE permanecer FIXA em sua escala e posição central original (área de segurança interna).\n"
+                "- É ESTRITAMENTE PROIBIDO esticar, mover, re-enquadrar ou redesenhar a moldura nas novas bordas externas da imagem.\n"
+                f"- Apenas o cenário/ambiente de fundo (calçada de pedras, chão molhado, paredes, arquitetura, névoa, céu escuro ou textura atmosférica) "
+                f"deve VAZAR e CONTINUAR organicamente para FORA da moldura ornamental, preenchendo todos os {bleed_px} px de sangria em cada uma das 4 bordas.\n"
+                "- Na imagem final expandida, deve existir uma margem visível e contínua de cenário puro entre a moldura original e a borda externa da tela, "
+                "garantindo que o corte da guilhotina passe com segurança pelo cenário sem danificar a moldura."
+            )
+        else:
+            sections.append(
+                "[TRATAMENTO DE BORDAS E MOLDURAS PRÉ-EXISTENTES]\n"
+                "- Caso a imagem anexa contenha moldura gráfica pré-existente ou bordas ornamentais, mantenha-as íntegras na área central "
+                "e estenda apenas o cenário para além delas, sem esticar a moldura até as novas margens externas."
+            )
+
         if extra_instructions and extra_instructions.strip():
             sections.append(
                 f"[DIRETRIZES COMPLEMENTARES DE CORREÇÃO]\n{extra_instructions.strip()}"
             )
 
+        negative_rules = [
+            "sem cortes no personagem",
+            "sem barras pretas ou brancas (pillarbox/letterbox)",
+            "sem molduras sólidas artificiais",
+            "sem emendas visíveis, linhas de corte ou descontinuidades de iluminação",
+            "sem deformação anatômica ou alteração do rosto original",
+        ]
+        if preserve_frame:
+            negative_rules.extend([
+                "NÃO redesenhe ou estique a moldura ornamental nas bordas externas",
+                "sem molduras duplicadas",
+                "NÃO mova as rosas-dos-ventos ou ornamentos de suas posições originais",
+            ])
+
         sections.append(
             "[RESTRIÇÕES NEGATIVAS OBRIGATÓRIAS]\n"
-            "Evite estritamente: sem cortes no personagem; sem barras pretas ou brancas (pillarbox/letterbox); "
-            "sem molduras sólidas artificiais; sem emendas visíveis, linhas de corte ou descontinuidades de iluminação; "
-            "sem deformação anatômica ou alteração do rosto original."
+            f"Evite estritamente: {'; '.join(negative_rules)}."
         )
 
         return "\n\n".join(sections)

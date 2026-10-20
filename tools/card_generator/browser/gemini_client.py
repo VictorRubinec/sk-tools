@@ -417,41 +417,16 @@ class GeminiClient:
             logger.debug("Imagem ainda sendo processada pelo Gemini, aguardando...")
             page.wait_for_timeout(1500)
 
-    @staticmethod
-    def _trim_screenshot_borders(raw_bytes: bytes) -> bytes:
-        """Remove barras pretas periféricas caso o screenshot capture padding/pillarboxing do DOM."""
-        try:
-            with Image.open(io.BytesIO(raw_bytes)) as img:
-                rgb_img = img.convert("RGB")
-                gray = rgb_img.convert("L")
-                thresh = gray.point(lambda p: 255 if p > 20 else 0)
-                bbox = thresh.getbbox()
-                if not bbox:
-                    return raw_bytes
-                left, top, right, bottom = bbox
-                max_w = int(rgb_img.width * 0.25)
-                max_h = int(rgb_img.height * 0.25)
-                crop_left = left if left <= max_w else 0
-                crop_top = top if top <= max_h else 0
-                crop_right = right if (rgb_img.width - right) <= max_w else rgb_img.width
-                crop_bottom = bottom if (rgb_img.height - bottom) <= max_h else rgb_img.height
-                if crop_left > 0 or crop_top > 0 or crop_right < rgb_img.width or crop_bottom < rgb_img.height:
-                    cropped = rgb_img.crop((crop_left, crop_top, crop_right, crop_bottom))
-                    buf = io.BytesIO()
-                    cropped.save(buf, format="PNG")
-                    return buf.getvalue()
-                return raw_bytes
-        except Exception:
-            return raw_bytes
-
     def extract_latest_generated_image(self, page: Page) -> Optional[bytes]:
         """Localiza e baixa o arquivo original da última imagem gerada na conversa.
 
-        Prioriza o download direto do arquivo em alta resolução (via botão nativo de download
-        ou fetch do blob/URL) em vez de capturar print/screenshot da tela.
+        Executa exclusivamente o download direto do arquivo em alta resolução (via botão nativo
+        de download, extração de buffer gráfico nativo ou requisição HTTP direta), sem qualquer
+        recurso a capturas de tela (screenshots).
 
         Raises:
-            GeminiImageNotGeneratedError: Se nenhuma imagem válida for encontrada na resposta.
+            GeminiImageNotGeneratedError: Se nenhuma imagem válida for encontrada na resposta ou
+                se o download direto falhar.
         """
         try:
             images = page.locator(self.GENERATED_IMAGE_SELECTOR)
@@ -498,16 +473,25 @@ class GeminiClient:
                 logger.info("Localizando botão de download nativo no card da imagem...")
                 target_img.scroll_into_view_if_needed()
                 target_img.hover()
-                img_container = page.locator(".image-container, model-response").last
-                if img_container.count() > 0:
-                    img_container.hover()
+                page.wait_for_timeout(800)
 
-                page.wait_for_timeout(600)
+                # Busca o botão preferencialmente no container local da imagem
+                download_btn = None
+                for container_sel in ["model-response", ".image-container", "message-content"]:
+                    parent = target_img.locator(f"xpath=ancestor::{container_sel}[1]")
+                    if parent.count() > 0:
+                        cand_btn = parent.locator(self.DOWNLOAD_BUTTON_SELECTOR)
+                        if cand_btn.count() > 0:
+                            download_btn = cand_btn.last
+                            break
 
-                download_btn = page.locator(self.DOWNLOAD_BUTTON_SELECTOR).last
+                if download_btn is None or download_btn.count() == 0:
+                    download_btn = page.locator(self.DOWNLOAD_BUTTON_SELECTOR).last
+
                 if download_btn.count() > 0:
                     logger.info("Acionando botão de download nativo do Gemini...")
-                    with page.expect_download(timeout=12000) as download_info:
+                    download_btn.scroll_into_view_if_needed()
+                    with page.expect_download(timeout=35000) as download_info:
                         download_btn.click(force=True)
                     download = download_info.value
                     temp_path = download.path()
@@ -526,9 +510,38 @@ class GeminiClient:
                 _, b64_data = src.split(",", 1)
                 raw_bytes = base64.b64decode(b64_data)
                 if raw_bytes:
+                    logger.success(f"Binário extraído diretamente de Data-URI ({len(raw_bytes):,} bytes).")
                     return raw_bytes
 
-            # 3. Estratégia de Download via Fetch no contexto da página (para URLs e blobs)
+            # 3. Estratégia de extração do buffer gráfico de alta resolução via Canvas DOM
+            try:
+                b64_canvas = target_img.evaluate("""(img) => {
+                    try {
+                        const w = img.naturalWidth || img.width;
+                        const h = img.naturalHeight || img.height;
+                        if (!w || !h || w < 256 || h < 256) return null;
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w;
+                        canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        return canvas.toDataURL('image/png');
+                    } catch (e) {
+                        return null;
+                    }
+                }""")
+                if b64_canvas and "," in b64_canvas:
+                    _, b64_clean = b64_canvas.split(",", 1)
+                    canvas_bytes = base64.b64decode(b64_clean)
+                    if canvas_bytes and len(canvas_bytes) > 10240:
+                        logger.success(
+                            f"Arquivo original extraído do buffer gráfico nativo ({len(canvas_bytes):,} bytes)!"
+                        )
+                        return canvas_bytes
+            except Exception:
+                pass
+
+            # 4. Estratégia de Download via Fetch no contexto da página (para URLs e blobs)
             if src:
                 try:
                     b64_from_fetch = page.evaluate("""async (url) => {
@@ -545,17 +558,18 @@ class GeminiClient:
                         _, b64_clean = b64_from_fetch.split(",", 1)
                         data = base64.b64decode(b64_clean)
                         if data and len(data) > 1024:
+                            logger.success(f"Arquivo baixado via fetch interno ({len(data):,} bytes).")
                             return data
                 except Exception:
                     pass
 
-            # 4. Estratégia de Download HTTP direto via Playwright Request
+            # 5. Estratégia de Download HTTP direto via Playwright Request
             if src.startswith("http://") or src.startswith("https://"):
-                urls_to_try = [src]
-                if "=s" in src and "googleusercontent.com" in src:
-                    high_res_url = re.sub(r"=s\d+", "=s0", src)
-                    if high_res_url != src:
-                        urls_to_try.insert(0, high_res_url)
+                urls_to_try = []
+                if "googleusercontent.com" in src:
+                    urls_to_try.append(re.sub(r"=[swh]\d+.*", "=s0", src))
+                    urls_to_try.append(re.sub(r"=[swh]\d+.*", "=d", src))
+                urls_to_try.append(src)
 
                 for u in urls_to_try:
                     try:
@@ -563,20 +577,13 @@ class GeminiClient:
                         if response.ok:
                             body = response.body()
                             if body and len(body) > 1024:
+                                logger.success(f"Download direto via Playwright HTTP Request ({len(body):,} bytes).")
                                 return body
                     except Exception:
                         pass
 
-            # 5. Fallback para screenshot apenas se todas as tentativas de download falharem
-            screenshot_bytes = target_img.screenshot(type="png")
-            if isinstance(screenshot_bytes, bytes) and len(screenshot_bytes) > 0:
-                logger.warning(
-                    "Download direto indisponível; utilizando fallback de screenshot com remoção de bordas DOM."
-                )
-                return self._trim_screenshot_borders(screenshot_bytes)
-
             raise GeminiImageNotGeneratedError(
-                "A imagem gerada foi localizada no DOM, mas não foi possível extrair seus bytes."
+                "A imagem gerada foi localizada no DOM, mas o download nativo do arquivo em alta resolução falhou."
             )
         except GeminiImageNotGeneratedError:
             raise

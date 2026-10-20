@@ -124,6 +124,19 @@ class TestBackgroundExpansionPromptBuilder(unittest.TestCase):
                 self.assertIn("sem barras pretas", prompt.lower())
                 self.assertIn("sem cortes no personagem", prompt.lower())
 
+    def test_build_prompt_with_preserve_frame(self) -> None:
+        """Deve incluir instruções rigorosas de preservação de moldura e sangria externa."""
+        prompt = self.builder.build_prompt(
+            mode="bleed_5mm",
+            bleed_mm=5.0,
+            base_size=(1024, 1536),
+            preserve_frame=True,
+        )
+        self.assertIn("PRESERVAÇÃO DE MOLDURA E SANGRIA EXTERNA", prompt)
+        self.assertIn("moldura decorativa deve permanecer fixa", prompt.lower())
+        self.assertIn("vazar e continuar organicamente para fora da moldura", prompt.lower())
+        self.assertIn("não redesenhe ou estique a moldura ornamental", prompt.lower())
+
     def test_invalid_mode_raises_value_error(self) -> None:
         """Deve rejeitar modos de expansão desconhecidos."""
         with self.assertRaises(ValueError):

@@ -14,6 +14,7 @@ def expand_background(
     image_path: Union[str, Path],
     mode: str = "bleed_5mm",
     bleed_mm: float = DEFAULT_BLEED_MM,
+    preserve_frame: bool = False,
     config: Optional[AppConfig] = None,
     max_retries: int = 3,
 ) -> Path:
@@ -23,6 +24,7 @@ def expand_background(
         image_path: Caminho para a imagem original.
         mode: Modo de expansão ('bleed_5mm', 'horizontal', 'caneca', 'custom').
         bleed_mm: Margem de sangria por borda em milímetros (padrão: 5.0 mm = 59 px a 300 DPI).
+        preserve_frame: Se True, mantém a moldura decorativa fixa no centro e expande o cenário para fora dela.
         config: Configurações operacionais (`AppConfig`). Usa `DEFAULT_CONFIG` se omitido.
         max_retries: Número máximo de tentativas de geração e validação.
 
@@ -33,6 +35,7 @@ def expand_background(
         image_path=image_path,
         mode=mode,
         bleed_mm=bleed_mm,
+        preserve_frame=preserve_frame,
         config=config or DEFAULT_CONFIG,
         max_retries=max_retries,
     )

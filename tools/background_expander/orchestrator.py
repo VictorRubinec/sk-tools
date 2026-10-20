@@ -44,6 +44,7 @@ def run_background_expansion_orchestration(
     image_path: Union[str, Path],
     mode: str = "bleed_5mm",
     bleed_mm: float = DEFAULT_BLEED_MM,
+    preserve_frame: bool = False,
     config: Optional[AppConfig] = None,
     client: Optional[GeminiClient] = None,
     prompt_builder: Optional[BackgroundExpansionPromptBuilder] = None,
@@ -58,6 +59,7 @@ def run_background_expansion_orchestration(
         image_path: Caminho para a imagem original.
         mode: Modo de expansão ('bleed_5mm', 'horizontal', 'caneca', 'custom').
         bleed_mm: Milímetros de margem de sangria por borda (padrão: 5.0 mm = 59 px a 300 DPI).
+        preserve_frame: Se True, mantém a moldura decorativa fixa no centro e expande apenas o fundo para fora.
         config: Configuração da aplicação (`AppConfig`).
         client: Cliente `GeminiClient` opcional (para injeção em testes).
         prompt_builder: Instância opcional de `BackgroundExpansionPromptBuilder`.
@@ -129,6 +131,7 @@ def run_background_expansion_orchestration(
                 base_size=base_size,
                 custom_size=custom_size,
                 extra_instructions=extra_instructions,
+                preserve_frame=preserve_frame,
             )
 
             try:
@@ -152,7 +155,10 @@ def run_background_expansion_orchestration(
                 )
                 last_errors = [str(exc)]
                 extra_instructions = (
-                    f"Expanda obrigatoriamente o cenário de fundo sem alterar o personagem central, "
+                    f"Expanda obrigatoriamente o cenário de fundo para FORA da moldura existente sem alterar o sujeito central, "
+                    f"preenchendo toda a área até {target_w}x{target_h} pixels sem barras pretas e sem esticar a moldura."
+                    if preserve_frame
+                    else f"Expanda obrigatoriamente o cenário de fundo sem alterar o personagem central, "
                     f"preenchendo toda a área até {target_w}x{target_h} pixels sem barras pretas."
                 )
                 continue
